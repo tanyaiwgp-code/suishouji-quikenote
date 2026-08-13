@@ -1,11 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "主窗口 capability：仅授予笔记文件系统白名单命令（M1-6）",
-  "windows": ["main"],
+  "identifier": "quicknote",
+  "description": "快速记录浮窗 capability：笔记命令 + 窗口控制命令（M4）",
+  "windows": ["quicknote"],
   "permissions": [
     "core:default",
-    "core:window:allow-hide",
     "opener:default",
     "allow-list-notes",
     "allow-read-note",
@@ -15,6 +14,8 @@
     "allow-release-note-lock",
     "allow-assets-import",
     "allow-assets-import-base64",
-    "allow-note-abs-path"
+    "allow-note-abs-path",
+    "allow-open-main-window",
+    "allow-hide-quicknote"
   ]
 }

@@ -728,3 +728,57 @@ kbd {
     transition: none !important;
   }
 }
+
+/* ============================================================
+   快速记录浮窗（M4）
+   ============================================================ */
+.quicknote {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+.qn-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.qn-title-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+  padding: 0;
+}
+.qn-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.qn-body .editor-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.qn-body .editor-header {
+  padding: var(--space-2) var(--space-3);
+}
+.qn-body .toolbar {
+  margin-top: 0;
+}
+.qn-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}

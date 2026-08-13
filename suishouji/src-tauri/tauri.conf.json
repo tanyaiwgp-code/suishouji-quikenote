@@ -19,6 +19,21 @@
         "minWidth": 480,
         "minHeight": 360,
         "center": true
+      },
+      {
+        "label": "quicknote",
+        "url": "quicknote.html",
+        "title": "快速记录",
+        "width": 560,
+        "height": 420,
+        "minWidth": 480,
+        "minHeight": 360,
+        "resizable": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "center": true
       }
     ],
     "security": {

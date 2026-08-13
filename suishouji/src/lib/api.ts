@@ -41,3 +41,10 @@ export { convertFileSrc };
 export function onNotesChanged(cb: () => void): Promise<UnlistenFn> {
   return listen("notes://changed", () => cb());
 }
+
+// --- M4：窗口控制（Rust 端执行，避免给浮窗授予逐窗口 JS 权限） ---
+
+/** 显示并聚焦主窗口（同时隐藏快速记录浮窗）。 */
+export const openMainWindow = (): Promise<void> => invoke<void>("open_main_window");
+/** 隐藏快速记录浮窗。 */
+export const hideQuicknote = (): Promise<void> => invoke<void>("hide_quicknote");

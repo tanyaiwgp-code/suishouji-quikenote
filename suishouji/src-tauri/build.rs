@@ -16,6 +16,8 @@ fn main() {
                 "assets_import",
                 "assets_import_base64",
                 "note_abs_path",
+                "open_main_window",
+                "hide_quicknote",
             ]),
         ),
     )

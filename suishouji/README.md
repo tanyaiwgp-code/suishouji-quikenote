@@ -15,7 +15,7 @@
 | M3 编辑器与图文混排 | ✅ | 2026-08-13 |
 | M3.5 代码审视与加固 | ✅ | 2026-08-14 |
 | M4 前置 editor.ts 工厂化 | ✅ | 2026-08-14 |
-| M4 浮窗托盘快捷键 | ⬜ 待开始 | — |
+| M4 浮窗托盘快捷键 | ✅ | 2026-08-14 |
 | M5 格式链路 | ⬜ 待开始 | — |
 | M6 打磨发布 | ⬜ 待开始 | — |
 
@@ -27,7 +27,13 @@
 > **2026-08-14 · M4 前置 editor.ts 工厂化**：单例 → `createEditor(target)` 类工厂，编辑器状态全部 per-instance
 > （主窗口与快速记录浮窗各持一个实例）；窗口关窗接线（onCloseRequested/beforeunload → flushSave）移至入口。
 > 43 单测全绿 + headless 真实 DOM 冒烟（占位/选笔记/壳/CodeMirror）零页面错误，无行为变化。
-> 剩余维护性项（前端测试、CI 等）为 M4/M6 后续项。
+>
+> **2026-08-14 · M4 浮窗托盘快捷键**：托盘常驻（左键=快速记录，右键菜单：新建快速记录/打开主窗口/开机自启勾选/退出）；
+> 全局快捷键 Ctrl+Alt+N 唤出快速记录浮窗；浮窗复用编辑器工厂精简壳（隐藏返回/模式/状态栏/标题徽章，保留工具栏图片按钮），
+> 草稿时间戳命名自动落盘 `收件箱/`、标题入 frontmatter，Ctrl+Enter 存并关 / Ctrl+Shift+Enter 存并开主窗 / Esc 丢弃；
+> 单实例二次启动聚焦主窗；窗口位置/尺寸记忆；**主窗口 X 改为隐藏到托盘**（进程存活，退出走托盘）。
+> 4 个官方插件（global-shortcut / single-instance / autostart / window-state，Rust-only 集成）。
+> 剩余维护性项（前端测试、CI 等）为 M5/M6 后续项。
 
 ## 常用命令
 
@@ -54,10 +60,12 @@ src-tauri/src/
 │   └── watcher.rs      # notify 文件监听（M2-4）
 ├── commands.rs     # IPC 命令薄封装（白名单：build.rs AppManifest）
 src/
-├── lib/            # api.ts（类型化 invoke）/ search.ts（倒排索引）/ store.ts（nanostores）
-├── lib/editor.ts   # createEditor() 工厂：CodeMirror 6 + markdown-it 预览 + 自动保存 + 图片导入 + 锁生命周期（M3/M4 前置）
+├── lib/            # api.ts（类型化 invoke）/ search.ts（倒排索引）/ store.ts（nanostores）/ theme.ts（initTheme）
+├── lib/editor.ts   # createEditor(target, opts) 工厂：CodeMirror 6 + markdown-it + 自动保存 + 图片 + 锁 + 精简壳选项（M3/M4）
 ├── ui.ts           # 渲染（列表/编辑器占位/空状态；setEditor 注入编辑器实例）
-└── main.ts         # 入口（主题/搜索/导航/新建/文件监听刷新/关窗落盘接线）
+├── quicknote.ts    # 快速记录浮窗入口（M4：草稿自动落盘/标题 frontmatter/快捷键）
+└── main.ts         # 主窗口入口（主题/搜索/导航/新建/文件监听/关窗→托盘）
+index.html / quicknote.html   # 双入口（vite build.rollupOptions.input）
 public/
 └── theme-init.js   # 主题防闪外部脚本（满足 CSP script-src 'self'，S2）
 ```

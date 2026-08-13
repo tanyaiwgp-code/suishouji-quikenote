@@ -4,7 +4,7 @@
 use base64::Engine as _;
 use crate::core::model::{AssetImport, NoteMeta};
 use crate::core::store::FsStore;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[tauri::command]
 pub fn list_notes(store: State<FsStore>) -> Result<Vec<NoteMeta>, String> {
@@ -73,4 +73,31 @@ pub fn assets_import_base64(
 #[tauri::command]
 pub fn note_abs_path(store: State<FsStore>, rel: String) -> Result<String, String> {
     store.note_abs_path(&rel).map_err(|e| e.to_string())
+}
+
+/// M4：显示并聚焦主窗口；同时隐藏快速记录浮窗，并通知主窗口刷新列表。
+/// 用途：托盘「打开主窗口」、单实例二次启动、快速记录「打开主窗口」/ Ctrl+Shift+Enter。
+#[tauri::command]
+pub fn open_main_window(app: AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
+    if let Some(q) = app.get_webview_window("quicknote") {
+        let _ = q.hide();
+    }
+    // 草稿可能在浮窗内已新增/删除/落盘，让主窗口列表感知
+    let _ = app.emit("notes://changed", ());
+    Ok(())
+}
+
+/// M4：隐藏快速记录浮窗；通知主窗口刷新列表（保存并关闭 / 丢弃 / 关窗后调用）。
+#[tauri::command]
+pub fn hide_quicknote(app: AppHandle) -> Result<(), String> {
+    if let Some(q) = app.get_webview_window("quicknote") {
+        let _ = q.hide();
+    }
+    let _ = app.emit("notes://changed", ());
+    Ok(())
 }

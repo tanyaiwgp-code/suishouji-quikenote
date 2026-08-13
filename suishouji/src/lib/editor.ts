@@ -94,13 +94,25 @@ export interface EditorInstance {
   onExternalChange(): Promise<void>;
   /** 立即落盘（清防抖定时器 + 保存未保存内容）。关窗前调用。 */
   flushSave(): Promise<void>;
+  /** 返回当前编辑内容（未载入笔记时为空字符串）。快速记录浮窗 finalize 用。 */
+  getContent(): string;
+  /** 聚焦 CodeMirror 正文。 */
+  focus(): void;
   /** 销毁实例：清定时器、退监听、归还文件锁、清空容器。幂等，destroy 后可再 render。 */
   destroy(): void;
 }
 
+/** M4：编辑器外壳选项，全部默认 true；快速记录浮窗关闭回退按钮/模式按钮/状态栏/标题徽章。 */
+export interface EditorOptions {
+  backButton?: boolean;
+  modeButtons?: boolean;
+  statusBar?: boolean;
+  titleBadge?: boolean;
+}
+
 /** 创建一个绑定到 target 容器的编辑器实例。 */
-export function createEditor(target: HTMLElement): EditorInstance {
-  return new Editor(target);
+export function createEditor(target: HTMLElement, opts: EditorOptions = {}): EditorInstance {
+  return new Editor(target, opts);
 }
 
 class Editor implements EditorInstance {
@@ -118,6 +130,8 @@ class Editor implements EditorInstance {
   private readonly host: HTMLElement;
   /** 当前工作容器；destroy() 置 null，render() 时经 host 重挂。 */
   private container: HTMLElement | null;
+  /** 外壳配置（M4 精简壳用），构造时合并默认值。 */
+  private readonly opts: Required<EditorOptions>;
 
   private view: EditorView | null = null;
   private open: OpenNote | null = null;
@@ -134,10 +148,11 @@ class Editor implements EditorInstance {
 
   private onDocClickBound: (e: MouseEvent) => void;
 
-  constructor(target: HTMLElement) {
+  constructor(target: HTMLElement, opts: EditorOptions = {}) {
     this.host = target;
     this.container = target;
-    this.mode = loadMode();
+    this.opts = { backButton: true, modeButtons: true, statusBar: true, titleBadge: true, ...opts };
+    this.mode = this.opts.modeButtons ? loadMode() : "edit"; // 无模式按钮时钉死编辑态
 
     const origImageRule = this.md.renderer.rules.image;
     this.md.renderer.rules.image = (tokens, idx, options, env, self) => {
@@ -204,14 +219,16 @@ class Editor implements EditorInstance {
     }
     this.destroyEditor();
     this.container = target;
+    const o = this.opts;
     target.innerHTML = `
       <div class="editor-wrap">
         <header class="editor-header">
+          ${o.titleBadge ? `
           <div class="editor-title-row">
-            <button class="btn-icon back-btn" id="ed-back" title="返回列表" aria-label="返回列表">‹</button>
+            ${o.backButton ? `<button class="btn-icon back-btn" id="ed-back" title="返回列表" aria-label="返回列表">‹</button>` : ""}
             <h1 class="editor-title" id="ed-title">…</h1>
             <span class="badge" id="ed-badge"></span>
-          </div>
+          </div>` : ""}
           <div class="toolbar" role="toolbar" aria-label="编辑器工具栏">
             <button class="tbtn" data-cmd="bold" title="粗体" aria-label="粗体">B</button>
             <button class="tbtn" data-cmd="italic" title="斜体" aria-label="斜体">I</button>
@@ -228,22 +245,24 @@ class Editor implements EditorInstance {
             <span class="toolbar-sep"></span>
             <button class="tbtn" data-cmd="export" title="复制 Markdown" aria-label="复制 Markdown">⧉</button>
             <span class="toolbar-grow"></span>
+            ${o.modeButtons ? `
             <button class="tbtn mode-btn${this.mode === "edit" ? " active" : ""}" data-mode="edit">编辑</button>
             <button class="tbtn mode-btn${this.mode === "split" ? " active" : ""}" data-mode="split">双栏</button>
-            <button class="tbtn mode-btn${this.mode === "preview" ? " active" : ""}" data-mode="preview">预览</button>
+            <button class="tbtn mode-btn${this.mode === "preview" ? " active" : ""}" data-mode="preview">预览</button>` : ""}
           </div>
         </header>
         <div class="editor-body ${this.mode === "split" ? "split" : this.mode === "preview" ? "preview" : "edit"}" id="ed-body">
           <div class="cm-host" id="ed-cm"></div>
           <div class="preview-pane" id="ed-preview" aria-label="预览"></div>
         </div>
+        ${o.statusBar ? `
         <footer class="editor-status" id="ed-status">
           <span id="ed-wc"></span>
           <span class="status-sep">·</span>
           <span id="ed-format"></span>
           <span class="status-grow"></span>
           <span id="ed-save" class="save-state">未编辑</span>
-        </footer>
+        </footer>` : ""}
       </div>`;
     this.bindShell();
   }
@@ -316,6 +335,16 @@ class Editor implements EditorInstance {
   async flushSave(): Promise<void> {
     clearTimeout(this.saveTimer);
     await this.saveNow();
+  }
+
+  /** 当前编辑内容（未载入笔记时为空字符串）。快速记录浮窗 finalize 用。 */
+  getContent(): string {
+    return this.view?.state.doc.toString() ?? "";
+  }
+
+  /** 聚焦 CodeMirror 正文。 */
+  focus(): void {
+    this.view?.focus();
   }
 
   // ============================================================

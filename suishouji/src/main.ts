@@ -8,6 +8,7 @@ import "./styles.css";
 import { listNotes, onNotesChanged, writeNote } from "./lib/api";
 import { createEditor, type EditorInstance } from "./lib/editor";
 import { index, mobileView, navView, notes, query, selectedPath, type NavView } from "./lib/store";
+import { initTheme } from "./lib/theme";
 import { applyViewMode, renderAll, renderShell, setEditor, updateListTitle } from "./ui";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -16,15 +17,6 @@ import type { NoteMeta } from "./types";
 /** 与 Rust `list_notes` 一致的排序：置顶 → mtime 倒序 → 路径字典序（B7 本地重排用）。 */
 function byMtime(a: NoteMeta, b: NoteMeta): number {
   return Number(b.pinned) - Number(a.pinned) || b.mtime - a.mtime || a.path.localeCompare(b.path);
-}
-
-// --- 主题管理 ---
-function initTheme(): void {
-  const stored = localStorage.getItem("theme");
-  if (stored === "dark" || stored === "light") {
-    document.documentElement.setAttribute("data-theme", stored);
-  }
-  // 否则跟随系统（CSS media query 自动处理）
 }
 
 // --- 数据加载 ---
@@ -160,15 +152,15 @@ function wireEvents(editor: EditorInstance): void {
 }
 
 // --- 关窗落盘（B2，自 M4 前置起由窗口入口接线） ---
-// 拦截关窗请求 → 等待保存完成再真正销毁，避免异步 IPC 尚未落地就关窗导致丢字。
-// 非 Tauri（纯 vite）退化为 beforeunload 尽力而为。
+// 拦截关窗请求 → 等待保存完成再隐藏到托盘（进程存活），避免异步 IPC 未落地就关窗丢字。
+// 非 Tauri（纯 vite）退化为 beforeunload 尽力而为。真正退出走托盘「退出」。
 function wireWindowClose(editor: EditorInstance): void {
   if (isTauri()) {
     getCurrentWindow()
       .onCloseRequested(async (event) => {
         event.preventDefault();
         await editor.flushSave(); // flushSave() 内部已 clearTimeout(saveTimer)
-        await getCurrentWindow().destroy().catch(() => {});
+        await getCurrentWindow().hide().catch(() => {});
       })
       .catch(() => {
         /* 无窗口环境忽略 */

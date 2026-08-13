@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-hide-quicknote"
+description = "Enables the hide_quicknote command without any pre-configured scope."
+commands.allow = ["hide_quicknote"]
+
+[[permission]]
+identifier = "deny-hide-quicknote"
+description = "Denies the hide_quicknote command without any pre-configured scope."
+commands.deny = ["hide_quicknote"]
