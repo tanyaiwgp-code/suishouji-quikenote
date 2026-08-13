@@ -23,6 +23,19 @@ impl PathGuard {
         &self.root
     }
 
+    /// 根内的绝对路径 → 相对根目录的 `/` 分隔字符串（供图片引用回写）。
+    /// 路径不在根内时拒绝。
+    pub fn relative(&self, abs: &Path) -> Result<String, Error> {
+        let abs = normalize(abs.to_path_buf());
+        if !abs.starts_with(&self.root) {
+            return Err(Error::OutsideRoot(abs.display().to_string()));
+        }
+        Ok(abs
+            .strip_prefix(&self.root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default())
+    }
+
     /// 解析相对路径为根内的绝对路径。拒绝绝对路径、`..`、空路径、含 NUL。
     pub fn resolve(&self, rel: &str) -> Result<PathBuf, Error> {
         if rel.is_empty() {

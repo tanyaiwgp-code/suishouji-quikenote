@@ -29,3 +29,13 @@ pub struct NoteMeta {
     /// 正文前 500 字，供前端倒排索引（M2 搜索）。
     pub search_text: String,
 }
+
+/// `assets_import` 返回结果（M3-3）：图片在根内的相对引用 + 该笔记新图片总数。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetImport {
+    /// 图片相对根目录路径（`/` 分隔），如 `收件箱/note/assets/note-1.png`。
+    pub rel: String,
+    /// 导入后该笔记 `assets/` 下的图片总数。
+    pub count: u32,
+}

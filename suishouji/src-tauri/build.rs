@@ -13,6 +13,9 @@ fn main() {
                 "delete_note",
                 "acquire_note_lock",
                 "release_note_lock",
+                "assets_import",
+                "assets_import_base64",
+                "note_abs_path",
             ]),
         ),
     )

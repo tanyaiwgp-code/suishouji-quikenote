@@ -2,6 +2,7 @@
 // 轻渲染：状态变更时整体重绘（200 条规模内代价可忽略）。
 
 import { index, mobileView, navView, notes, query, selectedPath } from "./lib/store";
+import { render as editorRender } from "./lib/editor";
 import type { NoteMeta } from "./types";
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel) as T;
@@ -115,41 +116,8 @@ function emptyHtml(noNotes: boolean): string {
 function renderEditor(): void {
   const editor = $("#editor");
   const sel = selectedPath.get();
-  if (!sel) {
-    editor.innerHTML = `
-      <div class="editor-placeholder">
-        <div class="ph-title">选择一篇笔记</div>
-        <div class="ph-hint">从左侧列表选择开始阅读；编辑器在 M3 接入</div>
-      </div>`;
-    return;
-  }
-  const n = notes.get().find((x) => x.path === sel);
-  if (!n) {
-    editor.innerHTML = "";
-    return;
-  }
-  const title = n.title.trim() ? n.title : "（无标题）";
-  const tags = n.tags.length ? escapeHtml(n.tags.join(" · ")) : "无标签";
-  editor.innerHTML = `
-    <div class="editor-header">
-      <div class="editor-title-row">
-        <button class="btn-icon back-btn" title="返回列表" aria-label="返回列表">‹</button>
-        <h1 class="editor-title">${escapeHtml(title)}</h1>
-        <span class="badge badge-${n.format}">${n.format.toUpperCase()}</span>
-      </div>
-      <div class="editor-meta">
-        <span>${formatTime(n.mtime)}</span><span>·</span><span>${tags}</span>
-      </div>
-    </div>
-    <div class="editor-body-preview">${escapeHtml(n.preview) || "（空笔记）"}</div>
-    <div class="editor-m3-note">CodeMirror 编辑器将在 M3 接入，当前为只读预览。</div>
-  `;
-  editor
-    .querySelector(".back-btn")
-    ?.addEventListener("click", () => {
-      mobileView.set("list");
-      applyViewMode();
-    });
+  const n = sel ? notes.get().find((x) => x.path === sel) : undefined;
+  editorRender(editor, n ?? null);
 }
 
 /** 单栏（<720px）列表 ⇄ 编辑器切换。 */

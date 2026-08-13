@@ -11,6 +11,9 @@
     "allow-write-note",
     "allow-delete-note",
     "allow-acquire-note-lock",
-    "allow-release-note-lock"
+    "allow-release-note-lock",
+    "allow-assets-import",
+    "allow-assets-import-base64",
+    "allow-note-abs-path"
   ]
 }

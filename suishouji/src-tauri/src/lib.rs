@@ -24,14 +24,19 @@ pub fn run() {
             commands::delete_note,
             commands::acquire_note_lock,
             commands::release_note_lock,
+            commands::assets_import,
+            commands::assets_import_base64,
+            commands::note_abs_path,
         ])
         .setup(|app| {
             // M2-4：监听笔记根目录，外部修改 → 通知前端刷新列表
             let root = app.state::<FsStore>().root().to_path_buf();
             let handle = app.handle().clone();
-            watcher::spawn(root, move || {
+            watcher::spawn(root.clone(), move || {
                 let _ = handle.emit("notes://changed", ());
             });
+            // M3-3：允许 asset:// 协议读取根目录下的图片（前端 convertFileSrc 渲染）
+            let _ = app.asset_protocol_scope().allow_directory(root, true);
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -6,6 +6,7 @@
 
 import "./styles.css";
 import { listNotes, onNotesChanged, writeNote } from "./lib/api";
+import { onExternalChange } from "./lib/editor";
 import { index, mobileView, navView, notes, query, selectedPath, type NavView } from "./lib/store";
 import { applyViewMode, renderAll, renderShell, updateListTitle } from "./ui";
 
@@ -101,9 +102,18 @@ function wireEvents(): void {
     renderAll();
   });
 
-  // 文件系统监听：外部改动 → 自动刷新列表（M2-4）
-  onNotesChanged(() => loadNotes()).catch(() => {
+  // 文件系统监听：外部改动 → 自动刷新列表（M2-4）+ 当前打开笔记重载（M3）
+  onNotesChanged(async () => {
+    await loadNotes();
+    await onExternalChange();
+  }).catch(() => {
     /* 非 Tauri 环境（纯 vite）下忽略 */
+  });
+
+  // 单栏模式下「返回列表」（编辑器壳内 #ed-back 派发）
+  window.addEventListener("editor:back", () => {
+    mobileView.set("list");
+    applyViewMode();
   });
 
   // 窗口尺寸变化时校正单栏视图模式
