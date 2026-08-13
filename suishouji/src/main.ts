@@ -6,9 +6,11 @@
 
 import "./styles.css";
 import { listNotes, onNotesChanged, writeNote } from "./lib/api";
-import { onExternalChange } from "./lib/editor";
+import { createEditor, type EditorInstance } from "./lib/editor";
 import { index, mobileView, navView, notes, query, selectedPath, type NavView } from "./lib/store";
-import { applyViewMode, renderAll, renderShell, updateListTitle } from "./ui";
+import { applyViewMode, renderAll, renderShell, setEditor, updateListTitle } from "./ui";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { NoteMeta } from "./types";
 
 /** 与 Rust `list_notes` 一致的排序：置顶 → mtime 倒序 → 路径字典序（B7 本地重排用）。 */
@@ -78,7 +80,7 @@ async function createNote(): Promise<void> {
 }
 
 // --- 事件绑定 ---
-function wireEvents(): void {
+function wireEvents(editor: EditorInstance): void {
   // 主题切换
   document.getElementById("theme-toggle")?.addEventListener("click", () => {
     const cur = document.documentElement.getAttribute("data-theme");
@@ -128,7 +130,7 @@ function wireEvents(): void {
   // 文件系统监听：外部改动 → 自动刷新列表（M2-4）+ 当前打开笔记重载（M3）
   onNotesChanged(async () => {
     await loadNotes();
-    await onExternalChange();
+    await editor.onExternalChange();
   }).catch(() => {
     /* 非 Tauri 环境（纯 vite）下忽略 */
   });
@@ -157,10 +159,33 @@ function wireEvents(): void {
   window.addEventListener("resize", applyViewMode);
 }
 
+// --- 关窗落盘（B2，自 M4 前置起由窗口入口接线） ---
+// 拦截关窗请求 → 等待保存完成再真正销毁，避免异步 IPC 尚未落地就关窗导致丢字。
+// 非 Tauri（纯 vite）退化为 beforeunload 尽力而为。
+function wireWindowClose(editor: EditorInstance): void {
+  if (isTauri()) {
+    getCurrentWindow()
+      .onCloseRequested(async (event) => {
+        event.preventDefault();
+        await editor.flushSave(); // flushSave() 内部已 clearTimeout(saveTimer)
+        await getCurrentWindow().destroy().catch(() => {});
+      })
+      .catch(() => {
+        /* 无窗口环境忽略 */
+      });
+  }
+  window.addEventListener("beforeunload", () => {
+    void editor.flushSave();
+  });
+}
+
 // --- 启动 ---
 window.addEventListener("DOMContentLoaded", () => {
   initTheme();
   renderShell();
-  wireEvents();
+  const editor = createEditor(document.getElementById("editor") as HTMLElement);
+  setEditor(editor);
+  wireEvents(editor);
+  wireWindowClose(editor);
   void loadNotes();
 });

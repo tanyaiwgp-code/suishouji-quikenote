@@ -2,10 +2,17 @@
 // 轻渲染：状态变更时整体重绘（200 条规模内代价可忽略）。
 
 import { index, mobileView, navView, notes, query, selectedPath } from "./lib/store";
-import { render as editorRender } from "./lib/editor";
+import type { EditorInstance } from "./lib/editor";
 import type { NoteMeta } from "./types";
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel) as T;
+
+let editor: EditorInstance | null = null;
+
+/** main.ts 在 renderShell() 之后注入编辑器实例。 */
+export function setEditor(ed: EditorInstance): void {
+  editor = ed;
+}
 
 /** 首次构建静态骨架（顶栏 + 三栏容器）。事件绑定在 main.ts。 */
 export function renderShell(): void {
@@ -114,10 +121,9 @@ function emptyHtml(noNotes: boolean): string {
 }
 
 function renderEditor(): void {
-  const editor = $("#editor");
   const sel = selectedPath.get();
   const n = sel ? notes.get().find((x) => x.path === sel) : undefined;
-  editorRender(editor, n ?? null);
+  editor?.render(n ?? null);
 }
 
 /** 单栏（<720px）列表 ⇄ 编辑器切换。 */

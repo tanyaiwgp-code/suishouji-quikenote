@@ -14,6 +14,7 @@
 | M2 主窗口三栏 UI | ✅ | 2026-08-13 |
 | M3 编辑器与图文混排 | ✅ | 2026-08-13 |
 | M3.5 代码审视与加固 | ✅ | 2026-08-14 |
+| M4 前置 editor.ts 工厂化 | ✅ | 2026-08-14 |
 | M4 浮窗托盘快捷键 | ⬜ 待开始 | — |
 | M5 格式链路 | ⬜ 待开始 | — |
 | M6 打磨发布 | ⬜ 待开始 | — |
@@ -21,7 +22,12 @@
 > **2026-08-14 · M3.5 代码审视与加固**：对 M0-M3 全量审视（安全/功能/性能），修复并验证 7 项：
 > **S1** 预览链接 scheme 白名单（防 `javascript:` 执行/整页导航）、**B1** 文件锁泄漏、**B2** 关窗落盘、
 > **B4** 删除清理孤儿 assets、**B5** 新建文件名防碰撞、**S2** 主题防闪改外部脚本（CSP 兼容）、
-> **B7** watcher 自写事件抑制 + **B8** 元数据前缀读取。剩余维护性项（`editor.ts` 实例化、前端测试、CI 等）为 M4 前置。
+> **B7** watcher 自写事件抑制 + **B8** 元数据前缀读取。
+>
+> **2026-08-14 · M4 前置 editor.ts 工厂化**：单例 → `createEditor(target)` 类工厂，编辑器状态全部 per-instance
+> （主窗口与快速记录浮窗各持一个实例）；窗口关窗接线（onCloseRequested/beforeunload → flushSave）移至入口。
+> 43 单测全绿 + headless 真实 DOM 冒烟（占位/选笔记/壳/CodeMirror）零页面错误，无行为变化。
+> 剩余维护性项（前端测试、CI 等）为 M4/M6 后续项。
 
 ## 常用命令
 
@@ -49,9 +55,9 @@ src-tauri/src/
 ├── commands.rs     # IPC 命令薄封装（白名单：build.rs AppManifest）
 src/
 ├── lib/            # api.ts（类型化 invoke）/ search.ts（倒排索引）/ store.ts（nanostores）
-├── lib/editor.ts   # CodeMirror 6 编辑器 + markdown-it 预览 + 自动保存 + 图片导入 + 锁生命周期（M3/M3.5）
-├── ui.ts           # 渲染（列表/编辑器占位/空状态）
-└── main.ts         # 入口（主题/搜索/导航/新建/文件监听刷新）
+├── lib/editor.ts   # createEditor() 工厂：CodeMirror 6 + markdown-it 预览 + 自动保存 + 图片导入 + 锁生命周期（M3/M4 前置）
+├── ui.ts           # 渲染（列表/编辑器占位/空状态；setEditor 注入编辑器实例）
+└── main.ts         # 入口（主题/搜索/导航/新建/文件监听刷新/关窗落盘接线）
 public/
 └── theme-init.js   # 主题防闪外部脚本（满足 CSP script-src 'self'，S2）
 ```
