@@ -12,7 +12,16 @@
 | M0 环境与骨架 | ✅ | 2026-08-12 |
 | M1 文件系统核心 | ✅ | 2026-08-13 |
 | M2 主窗口三栏 UI | ✅ | 2026-08-13 |
-| M3 编辑器与图文混排 | ⬜ 待开始 | — |
+| M3 编辑器与图文混排 | ✅ | 2026-08-13 |
+| M3.5 代码审视与加固 | ✅ | 2026-08-14 |
+| M4 浮窗托盘快捷键 | ⬜ 待开始 | — |
+| M5 格式链路 | ⬜ 待开始 | — |
+| M6 打磨发布 | ⬜ 待开始 | — |
+
+> **2026-08-14 · M3.5 代码审视与加固**：对 M0-M3 全量审视（安全/功能/性能），修复并验证 7 项：
+> **S1** 预览链接 scheme 白名单（防 `javascript:` 执行/整页导航）、**B1** 文件锁泄漏、**B2** 关窗落盘、
+> **B4** 删除清理孤儿 assets、**B5** 新建文件名防碰撞、**S2** 主题防闪改外部脚本（CSP 兼容）、
+> **B7** watcher 自写事件抑制 + **B8** 元数据前缀读取。剩余维护性项（`editor.ts` 实例化、前端测试、CI 等）为 M4 前置。
 
 ## 常用命令
 
@@ -20,7 +29,7 @@
 npm run tauri dev     # 启动开发（前后端热重载，窗口 1280×800）
 npm run build         # 前端 tsc 类型检查 + vite 打包
 npm run tauri build   # 打包安装器（M6 验证）
-cd src-tauri && cargo test --lib   # Rust 核心层单测（33 项）
+cd src-tauri && cargo test --lib   # Rust 核心层单测（43 项）
 ```
 
 > Rust 工具链在 `E:\rust\`，新终端需先：
@@ -40,8 +49,11 @@ src-tauri/src/
 ├── commands.rs     # IPC 命令薄封装（白名单：build.rs AppManifest）
 src/
 ├── lib/            # api.ts（类型化 invoke）/ search.ts（倒排索引）/ store.ts（nanostores）
+├── lib/editor.ts   # CodeMirror 6 编辑器 + markdown-it 预览 + 自动保存 + 图片导入 + 锁生命周期（M3/M3.5）
 ├── ui.ts           # 渲染（列表/编辑器占位/空状态）
 └── main.ts         # 入口（主题/搜索/导航/新建/文件监听刷新）
+public/
+└── theme-init.js   # 主题防闪外部脚本（满足 CSP script-src 'self'，S2）
 ```
 
 ## 设计依据

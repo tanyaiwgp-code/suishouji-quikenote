@@ -6,8 +6,9 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use crate::core::encoding;
 use crate::core::error::Error;
@@ -29,11 +30,56 @@ const MAX_IMAGES_PER_NOTE: u32 = 50;
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// 导入图片文件名计数器，保证同名目录内名字唯一。
 static IMPORT_COUNTER: AtomicU64 = AtomicU64::new(0);
+/// 元数据读取上限（B8）：frontmatter + preview(80字) + 搜索摘录(500字) 均在前 8KB 内，
+/// 无需为构建列表而全量读文件。
+const META_READ_LIMIT: usize = 8 * 1024;
+/// 应用自身最近写入路径的窗口（B7）：此窗口内的写事件视为自写，不触发全量刷新。
+const OWN_WRITE_WINDOW: Duration = Duration::from_millis(600);
+
+/// 记录应用自身（自动保存/图片导入）写入的路径，供 watcher 抑制回环通知（B7）。
+pub struct OwnWriteRegistry {
+    inner: Mutex<Vec<(PathBuf, Instant)>>,
+}
+
+impl OwnWriteRegistry {
+    pub fn new() -> Self {
+        Self {
+            inner: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// 记录一次自写路径（顺带清理过期项）。
+    pub fn record(&self, path: PathBuf) {
+        let mut v = self.inner.lock().unwrap();
+        v.retain(|(_, t)| t.elapsed() < OWN_WRITE_WINDOW);
+        v.push((path, Instant::now()));
+    }
+
+    /// 该路径是否在自写窗口内（Windows 下按大小写不敏感比较，防盘符大小写抖动）。
+    pub fn is_own(&self, path: &Path) -> bool {
+        let v = self.inner.lock().unwrap();
+        v.iter()
+            .any(|(p, t)| t.elapsed() < OWN_WRITE_WINDOW && path_eq(p, path))
+    }
+}
+
+/// 路径比较：Windows 上路径大小写不敏感，统一小写后比较。
+#[cfg(windows)]
+fn path_eq(a: &Path, b: &Path) -> bool {
+    a.to_string_lossy().to_ascii_lowercase() == b.to_string_lossy().to_ascii_lowercase()
+}
+
+#[cfg(not(windows))]
+fn path_eq(a: &Path, b: &Path) -> bool {
+    a == b
+}
 
 pub struct FsStore {
     root: PathBuf,
     guard: PathGuard,
     locks: Arc<LockRegistry>,
+    /// 自写路径注册表（B7）：供 watcher 抑制应用自身写产生的回环刷新。
+    own: Arc<OwnWriteRegistry>,
 }
 
 impl FsStore {
@@ -45,12 +91,18 @@ impl FsStore {
             root,
             guard,
             locks: Arc::new(LockRegistry::new()),
+            own: Arc::new(OwnWriteRegistry::new()),
         })
     }
 
     #[allow(dead_code)] // M2 主窗口 UI 需要读取根目录展示
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// B7：自写路径注册表（供 watcher 过滤自身写入事件）。
+    pub fn own_writes(&self) -> Arc<OwnWriteRegistry> {
+        self.own.clone()
     }
 
     // ---------- M1-1 目录扫描 ----------
@@ -84,7 +136,8 @@ impl FsStore {
     }
 
     fn build_meta(&self, abs: &Path) -> Result<NoteMeta, Error> {
-        let bytes = std::fs::read(abs)?;
+        // B8：只读前 8KB（frontmatter/preview/搜索摘录都在前部），避免对整库全量读文件。
+        let bytes = read_prefix(abs, META_READ_LIMIT)?;
         let text = encoding::decode(&bytes);
         let fm = frontmatter::parse(&text);
 
@@ -131,12 +184,15 @@ impl FsStore {
     }
 
     /// 原子写：同目录写临时文件 → rename 覆盖。任一步失败清理临时文件。
+    /// B7：把临时文件与目标都登记为「自写」，避免 watcher 对本次保存触发全量刷新。
     pub fn write_note(&self, rel: &str, content: &str) -> Result<(), Error> {
         let target = self.guard.resolve(rel)?;
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let tmp = tmp_path(&target);
+        self.own.record(tmp.clone()); // 临时文件创建/改名源
+        self.own.record(target.clone()); // 改名落地目标
         let res = std::fs::write(&tmp, content).and_then(|_| std::fs::rename(&tmp, &target));
         if res.is_err() {
             let _ = std::fs::remove_file(&tmp); // 失败不留残留
@@ -145,12 +201,20 @@ impl FsStore {
         Ok(())
     }
 
+    /// 删除笔记文件；若该笔记独享 `assets/` 目录（无同 stem 兄弟笔记共享），一并清理（B4）。
     pub fn delete_note(&self, rel: &str) -> Result<(), Error> {
         let path = self.guard.resolve(rel)?;
         if path.is_dir() {
             return Err(Error::InvalidPath(rel.to_string()));
         }
-        std::fs::remove_file(path)?;
+        std::fs::remove_file(&path)?;
+        // 仅笔记（.md/.txt）有 assets 目录；清理为尽力而为，失败不阻断删除本身
+        if is_note_file(&path) {
+            let assets = path.with_extension("").join("assets");
+            if assets.is_dir() && !has_sibling_same_stem(&path) {
+                let _ = std::fs::remove_dir_all(&assets);
+            }
+        }
         Ok(())
     }
 
@@ -263,6 +327,9 @@ impl FsStore {
         std::fs::create_dir_all(&assets_dir)?;
         let target = unique_asset_path(&assets_dir, &ext);
         std::fs::copy(src, &target)?;
+        // B7：目录创建与图片写入都登记为自写，抑制 watcher 回环（图片数更新由 commands 显式广播）。
+        self.own.record(assets_dir.clone());
+        self.own.record(target.clone());
 
         let rel = self.guard.relative(&target)?;
         Ok(AssetImport {
@@ -279,6 +346,34 @@ fn is_note_file(path: &Path) -> bool {
         .and_then(|e| e.to_str())
         .map(|e| matches!(e.to_ascii_lowercase().as_str(), "md" | "txt"))
         .unwrap_or(false)
+}
+
+/// 读取文件前 `limit` 字节（B8）。截断的字节流由 `encoding::decode` 容忍——
+/// 丢失的尾部字节不会影响 frontmatter/preview(80字)/搜索摘录(500字)。
+fn read_prefix(path: &Path, limit: usize) -> Result<Vec<u8>, Error> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path)?;
+    let mut buf = vec![0u8; limit];
+    let n = f.read(&mut buf)?;
+    buf.truncate(n);
+    Ok(buf)
+}
+
+/// 同目录下是否存在与 `note` 同 stem 的其它笔记文件。
+/// `a.md` 与 `a.txt` 共享 `a/assets/`（`with_extension("")` 命名），
+/// 删除其中一篇时不能清掉另一篇的图（B4/B7）。
+fn has_sibling_same_stem(note: &Path) -> bool {
+    let Some(stem) = note.file_stem() else {
+        return false;
+    };
+    let dir = note.parent().unwrap_or_else(|| Path::new("."));
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    rd.flatten().any(|e| {
+        let p = e.path();
+        p != note && p.is_file() && is_note_file(&p) && p.file_stem() == Some(stem)
+    })
 }
 
 /// 图片计数：统计 `笔记名/assets/` 下图片扩展名的文件数（ADR #3）。
@@ -538,6 +633,40 @@ mod tests {
         cleanup(&root);
     }
 
+    // ---- B4 删除时清理孤儿 assets ----
+
+    #[test]
+    fn delete_note_cleans_orphan_assets() {
+        let root = temp_root("delassets");
+        let store = FsStore::new(root.clone()).unwrap();
+        store.write_note("note.md", "x").unwrap();
+        let assets = root.join("note/assets");
+        fs::create_dir_all(&assets).unwrap();
+        fs::write(assets.join("pic.png"), "png").unwrap();
+
+        store.delete_note("note.md").unwrap();
+        assert!(!root.join("note.md").exists());
+        assert!(!assets.exists(), "独享的孤儿 assets/ 应一并清理");
+        cleanup(&root);
+    }
+
+    #[test]
+    fn delete_note_keeps_shared_assets_when_sibling_same_stem() {
+        let root = temp_root("delshared");
+        let store = FsStore::new(root.clone()).unwrap();
+        store.write_note("a.md", "md").unwrap();
+        store.write_note("a.txt", "txt").unwrap();
+        let assets = root.join("a/assets");
+        fs::create_dir_all(&assets).unwrap();
+        fs::write(assets.join("pic.png"), "png").unwrap();
+
+        // a.md 与 a.txt 共享 a/assets（B7 现状）；删 a.md 不得清掉 a.txt 的图
+        store.delete_note("a.md").unwrap();
+        assert!(!root.join("a.md").exists());
+        assert!(assets.join("pic.png").is_file(), "同 stem 兄弟共享的 assets 不应被删");
+        cleanup(&root);
+    }
+
     // ---- M1-5 越界读写拒绝 ----
 
     #[test]
@@ -712,5 +841,17 @@ mod tests {
         let s = today_stamp();
         assert_eq!(s.len(), 8, "YYYYMMDD: {s}");
         assert!(s.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    // ---- B7 自写注册表 ----
+
+    #[test]
+    fn own_write_registry_tracks_recent_paths() {
+        let reg = OwnWriteRegistry::new();
+        let p = PathBuf::from("C:/notes/a.md");
+        assert!(!reg.is_own(&p), "未记录前不应判定为自写");
+        reg.record(p.clone());
+        assert!(reg.is_own(&p));
+        assert!(!reg.is_own(&PathBuf::from("C:/notes/b.md")), "其它路径不受影响");
     }
 }

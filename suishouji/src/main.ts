@@ -9,6 +9,12 @@ import { listNotes, onNotesChanged, writeNote } from "./lib/api";
 import { onExternalChange } from "./lib/editor";
 import { index, mobileView, navView, notes, query, selectedPath, type NavView } from "./lib/store";
 import { applyViewMode, renderAll, renderShell, updateListTitle } from "./ui";
+import type { NoteMeta } from "./types";
+
+/** 与 Rust `list_notes` 一致的排序：置顶 → mtime 倒序 → 路径字典序（B7 本地重排用）。 */
+function byMtime(a: NoteMeta, b: NoteMeta): number {
+  return Number(b.pinned) - Number(a.pinned) || b.mtime - a.mtime || a.path.localeCompare(b.path);
+}
 
 // --- 主题管理 ---
 function initTheme(): void {
@@ -35,12 +41,29 @@ async function loadNotes(): Promise<void> {
 }
 
 // --- 新建笔记（收件箱，时间戳命名） ---
+// B5：秒级时间戳同秒连续点击会碰撞同名文件 → 会话内序号 + 与现有列表查重兜底
+let lastCreateBase = "";
+let createSeq = 0;
+
 async function createNote(): Promise<void> {
   const ts = new Date();
   const pad = (x: number) => String(x).padStart(2, "0");
-  const rel =
+  const base =
     `收件箱/${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}` +
-    `_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.md`;
+    `_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
+  if (base === lastCreateBase) {
+    createSeq += 1;
+  } else {
+    lastCreateBase = base;
+    createSeq = 0;
+  }
+  let rel = createSeq === 0 ? `${base}.md` : `${base}_${createSeq}.md`;
+  // 兜底：与磁盘上已存在的笔记路径查重（跨会话同名文件）
+  const used = new Set(notes.get().map((n) => n.path));
+  while (used.has(rel)) {
+    createSeq += 1;
+    rel = `${base}_${createSeq}.md`;
+  }
   try {
     await writeNote(rel, "");
     selectedPath.set(rel);
@@ -114,6 +137,20 @@ function wireEvents(): void {
   window.addEventListener("editor:back", () => {
     mobileView.set("list");
     applyViewMode();
+  });
+
+  // B7：编辑器自动保存成功 → 本地更新 mtime 并重排，无需 watcher 全量重扫
+  window.addEventListener("note:saved", (e) => {
+    const rel = (e as CustomEvent<{ rel: string }>).detail?.rel;
+    if (!rel) return;
+    const arr = notes.get();
+    const i = arr.findIndex((x) => x.path === rel);
+    if (i < 0) return;
+    const copy = arr.slice();
+    copy[i] = { ...copy[i], mtime: Date.now() };
+    copy.sort(byMtime);
+    notes.set(copy);
+    renderAll();
   });
 
   // 窗口尺寸变化时校正单栏视图模式

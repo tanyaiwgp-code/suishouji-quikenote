@@ -31,9 +31,15 @@ pub fn run() {
         .setup(|app| {
             // M2-4：监听笔记根目录，外部修改 → 通知前端刷新列表
             let root = app.state::<FsStore>().root().to_path_buf();
+            // B7：应用自身写入（自动保存/图片导入）不触发全量刷新，
+            // 仅当去抖批次内存在非自写路径才广播 notes://changed
+            let own = app.state::<FsStore>().own_writes();
             let handle = app.handle().clone();
-            watcher::spawn(root.clone(), move || {
-                let _ = handle.emit("notes://changed", ());
+            watcher::spawn(root.clone(), move |paths: &[std::path::PathBuf]| {
+                let all_own = !paths.is_empty() && paths.iter().all(|p| own.is_own(p));
+                if !all_own {
+                    let _ = handle.emit("notes://changed", ());
+                }
             });
             // M3-3：允许 asset:// 协议读取根目录下的图片（前端 convertFileSrc 渲染）
             let _ = app.asset_protocol_scope().allow_directory(root, true);

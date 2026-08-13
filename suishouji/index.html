@@ -4,15 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>随手记</title>
-    <!-- 在 CSS 加载前同步设置主题，消除 FOUC -->
-    <script>
-      (function() {
-        var t = localStorage.getItem("theme");
-        if (t === "dark" || t === "light") {
-          document.documentElement.setAttribute("data-theme", t);
-        }
-      })();
-    </script>
+    <!-- 在 CSS 加载前同步设置主题，消除 FOUC（S2：外部文件以符合 CSP script-src 'self'） -->
+    <script src="/theme-init.js"></script>
     <link rel="stylesheet" href="/src/styles.css" />
     <script type="module" src="/src/main.ts" defer></script>
   </head>

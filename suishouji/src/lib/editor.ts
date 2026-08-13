@@ -18,6 +18,7 @@ import { markdown as cmMarkdown } from "@codemirror/lang-markdown";
 import MarkdownIt from "markdown-it";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   acquireNoteLock,
@@ -86,6 +87,40 @@ let previewTimer = 0;
 let loadToken = 0;
 let dragUnlisten: (() => void) | null = null;
 
+// 锁生命周期串行化（B1）：所有 acquire/release 沿同一条 promise 链执行，
+// 确保「先释放旧锁、再获取新锁」有序落地，避免占位/重开后假锁冲突。
+let lockChain: Promise<void> = Promise.resolve();
+let lockedRel: string | null = null;
+
+/** 串行获取笔记锁：先释放旧锁再获取新锁。返回是否成功（false = 被其他窗口占用）。 */
+async function lockNote(rel: string): Promise<boolean> {
+  const op = lockChain.then(async () => {
+    if (lockedRel && lockedRel !== rel) {
+      await releaseNoteLock(lockedRel).catch(() => {});
+    }
+    try {
+      await acquireNoteLock(rel);
+      lockedRel = rel;
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  lockChain = op.then(() => {});
+  return op;
+}
+
+/** 释放指定笔记的锁（幂等），并入锁链串行排队。 */
+function releaseLockFor(rel: string): void {
+  lockChain = lockChain.then(() => releaseNoteLock(rel).catch(() => {}));
+  if (lockedRel === rel) lockedRel = null;
+}
+
+/** 释放当前持有的锁（若持有）。编辑器销毁/占位时调用。 */
+function releaseOpenLock(): void {
+  if (lockedRel) releaseLockFor(lockedRel);
+}
+
 // 点击工具栏外任意处关闭标题菜单（模块级注册一次）
 document.addEventListener("click", (e) => {
   const t = e.target as HTMLElement;
@@ -94,7 +129,20 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// 窗口关闭前落盘
+// 关窗落盘（B2）：Tauri 环境拦截关窗请求 → 等待保存完成再真正销毁，
+// 避免异步 IPC 尚未落地就关窗导致丢字。非 Tauri（纯 vite）退化为 beforeunload 尽力而为。
+if (isTauri()) {
+  getCurrentWindow()
+    .onCloseRequested(async (event) => {
+      event.preventDefault();
+      clearTimeout(saveTimer);
+      await flushSave();
+      await getCurrentWindow().destroy().catch(() => {});
+    })
+    .catch(() => {
+      /* 无窗口环境忽略 */
+    });
+}
 window.addEventListener("beforeunload", () => {
   clearTimeout(saveTimer);
   void saveNow();
@@ -193,6 +241,7 @@ function destroyEditor(): void {
     dragUnlisten();
     dragUnlisten = null;
   }
+  releaseOpenLock(); // 归还当前笔记的锁，避免占位/重开时假只读（B1）
   open = null;
   noteAbsDir = "";
 }
@@ -228,10 +277,7 @@ async function loadNote(note: NoteMeta): Promise<void> {
   const token = ++loadToken;
 
   await flushSave();
-  if (open) {
-    await releaseNoteLock(open.rel).catch(() => {});
-    open = null;
-  }
+  open = null; // 旧笔记已落盘；其锁的释放由 lockNote 在获取新锁前串行接管（B1）
 
   let content = "";
   try {
@@ -249,15 +295,11 @@ async function loadNote(note: NoteMeta): Promise<void> {
     noteAbsDir = "";
   }
 
-  let readOnly = false;
-  try {
-    await acquireNoteLock(note.path);
-  } catch {
-    readOnly = true;
-    setSave("该笔记正被其他窗口编辑，已以只读打开", "warn");
-  }
+  const readOnly = !(await lockNote(note.path));
+  if (readOnly) setSave("该笔记正被其他窗口编辑，已以只读打开", "warn");
   if (token !== loadToken) {
-    if (!readOnly) await releaseNoteLock(note.path).catch(() => {});
+    // 快速切换期间本次获取已失效；归还已拿到的锁（幂等，不影响当前笔记）
+    if (!readOnly) releaseLockFor(note.path);
     return;
   }
 
@@ -368,6 +410,8 @@ async function saveNow(): Promise<void> {
     n.lastSaved = content;
     n.dirty = false;
     setSave("已自动保存", "saved");
+    // B7：自身写入不再触发 watcher 全量重扫；通知主进程本地更新 mtime 重排
+    window.dispatchEvent(new CustomEvent("note:saved", { detail: { rel: n.rel } }));
   } catch (err) {
     setSave(errText(err), "error");
   }
@@ -418,9 +462,15 @@ function bindShell(): void {
   const preview = container?.querySelector<HTMLElement>("#ed-preview");
   preview?.addEventListener("click", (e) => {
     const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a");
-    if (a?.href && /^https?:/i.test(a.href)) {
-      e.preventDefault();
-      void openUrl(a.href).catch(() => {});
+    if (!a) return;
+    // 所有链接一律拦截默认导航（S1）：仅 http(s)/mailto 交由系统打开。
+    // 其余 scheme（javascript:/file:/data:/asset:）与相对路径不响应——
+    // javascript: 会在应用上下文执行脚本（恶意笔记 → 完整 IPC 权限），
+    // 相对/asset 链接会整页导航破坏 SPA。检查原始 href 属性，而非浏览器解析后的 a.href。
+    e.preventDefault();
+    const href = a.getAttribute("href") ?? "";
+    if (/^(?:https?:|mailto:)/i.test(href)) {
+      void openUrl(href).catch(() => {});
     }
   });
   // 图片加载失败诊断：error 不冒泡，用捕获阶段监听
