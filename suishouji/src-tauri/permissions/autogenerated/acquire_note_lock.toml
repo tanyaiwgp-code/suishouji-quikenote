@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-acquire-note-lock"
+description = "Enables the acquire_note_lock command without any pre-configured scope."
+commands.allow = ["acquire_note_lock"]
+
+[[permission]]
+identifier = "deny-acquire-note-lock"
+description = "Denies the acquire_note_lock command without any pre-configured scope."
+commands.deny = ["acquire_note_lock"]

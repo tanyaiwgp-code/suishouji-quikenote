@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "主窗口 capability：仅授予笔记文件系统白名单命令（M1-6）",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "allow-list-notes",
+    "allow-read-note",
+    "allow-write-note",
+    "allow-delete-note",
+    "allow-acquire-note-lock",
+    "allow-release-note-lock"
+  ]
+}
