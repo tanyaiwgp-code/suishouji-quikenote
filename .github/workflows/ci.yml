@@ -24,6 +24,9 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+      # M8：Playwright E2E（Web 前端 + mock Tauri IPC，vite E2E 模式）
+      - run: npx playwright install chromium
+      - run: npm run test:e2e
 
   rust:
     name: Rust（test + clippy + 类型生成同步校验）

@@ -13,3 +13,7 @@ desktop.ini
 
 # 发布产物（NSIS 安装器 / 绿色版 zip，不入库）
 发布/
+
+# Playwright 产物（测试结果 / 报告）
+test-results/
+playwright-report/
