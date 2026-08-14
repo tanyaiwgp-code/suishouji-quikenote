@@ -121,6 +121,7 @@ window.addEventListener("DOMContentLoaded", () => {
     modeButtons: false,
     statusBar: false,
     titleBadge: false,
+    deleteButton: false,
   });
   wireEvents();
 });

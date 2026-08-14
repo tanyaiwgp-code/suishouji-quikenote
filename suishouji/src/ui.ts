@@ -90,6 +90,25 @@ export function renderShell(): void {
         </div>
       </div>
     </div>
+    <!-- M7：删除确认对话框（复用 modal 配方） -->
+    <div class="modal-backdrop" id="confirm-backdrop" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-label="删除笔记">
+        <header class="modal-header">
+          <h2 class="modal-title">删除笔记</h2>
+        </header>
+        <div class="modal-body">
+          <p id="confirm-text">确定删除该笔记？此操作不可恢复。</p>
+        </div>
+        <footer class="modal-actions">
+          <button class="btn-secondary" id="confirm-cancel" type="button">取消</button>
+          <button class="btn-danger" id="confirm-delete" type="button">删除</button>
+        </footer>
+      </div>
+    </div>
+    <!-- M7：列表右键菜单 -->
+    <div class="ctx-menu" id="ctx-menu" role="menu" aria-label="笔记操作" hidden>
+      <button type="button" role="menuitem" id="ctx-delete">删除笔记</button>
+    </div>
   `;
 }
 

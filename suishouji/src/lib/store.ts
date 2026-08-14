@@ -13,3 +13,13 @@ export const mobileView = atom<MobileView>("list");
 
 /** 搜索倒排索引（M2-3），随 notes 重建。 */
 export const index = new NoteIndex();
+
+/**
+ * M7：删除笔记后的本地状态更新——列表移除 + 重建搜索索引 + 若删的是当前选中则清空选中。
+ * 纯逻辑，供 main.ts 删除流程调用并独立单测（node 环境无 DOM）。
+ */
+export function applyDelete(rel: string): void {
+  notes.set(notes.get().filter((n) => n.path !== rel));
+  index.build(notes.get());
+  if (selectedPath.get() === rel) selectedPath.set(null);
+}

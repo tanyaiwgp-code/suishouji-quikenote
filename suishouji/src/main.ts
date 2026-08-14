@@ -7,6 +7,7 @@
 import "./styles.css";
 import {
   ApiError,
+  deleteNote,
   getAppSettings,
   listNotes,
   onNotesChanged,
@@ -15,7 +16,7 @@ import {
   writeNote,
 } from "./lib/api";
 import { createEditor, type EditorInstance } from "./lib/editor";
-import { index, mobileView, navView, notes, query, selectedPath, type NavView } from "./lib/store";
+import { applyDelete, index, mobileView, navView, notes, query, selectedPath, type NavView } from "./lib/store";
 import { buildNoteRel, inboxTimestampBase, type NoteExt } from "./lib/note-name";
 import { applyFont, applyTheme, initTheme } from "./lib/theme";
 import {
@@ -180,6 +181,7 @@ function wireEvents(editor: EditorInstance): void {
       if (window.matchMedia("(max-width: 719px)").matches) mobileView.set("editor");
       applyViewMode();
       renderAll();
+      return;
     }
   });
 
@@ -273,6 +275,108 @@ function wireEvents(editor: EditorInstance): void {
       const msg = e instanceof ApiError ? e.message : String(e);
       console.error("设置数据目录失败:", e);
       window.alert(`设置数据目录失败：${msg}`);
+    }
+  });
+
+  // --- M7：删除笔记（工具栏/右键/键盘 Del 三入口 → 确认 → 释放锁 → IPC → 本地刷新） ---
+  const confirmBackdrop = document.getElementById("confirm-backdrop") as HTMLElement | null;
+  const confirmText = document.getElementById("confirm-text") as HTMLElement | null;
+  const ctxMenu = document.getElementById("ctx-menu") as HTMLElement | null;
+  let pendingDeleteRel: string | null = null;
+  let ctxRel: string | null = null;
+
+  const closeConfirm = (): void => {
+    if (confirmBackdrop) confirmBackdrop.hidden = true;
+    pendingDeleteRel = null;
+  };
+  const openConfirm = (rel: string): void => {
+    pendingDeleteRel = rel;
+    const n = notes.get().find((x) => x.path === rel);
+    if (confirmText) {
+      confirmText.textContent = n
+        ? `确定删除「${n.title}」？此操作不可恢复。`
+        : "确定删除该笔记？此操作不可恢复。";
+    }
+    if (confirmBackdrop) confirmBackdrop.hidden = false;
+  };
+  const doDelete = async (): Promise<void> => {
+    if (!pendingDeleteRel) return;
+    const rel = pendingDeleteRel;
+    closeConfirm();
+    editor.render(null); // 先同步释放文件锁并阻断保存回写（saveTimer 因 open=null 提前返回）
+    try {
+      await deleteNote(rel);
+      applyDelete(rel);
+      renderAll();
+      applyViewMode();
+    } catch (e) {
+      console.error("删除笔记失败:", e);
+      await loadNotes(); // 文件仍在磁盘，重载恢复列表
+    }
+  };
+
+  document.getElementById("confirm-delete")?.addEventListener("click", () => {
+    void doDelete();
+  });
+  document.getElementById("confirm-cancel")?.addEventListener("click", closeConfirm);
+  confirmBackdrop?.addEventListener("click", (e) => {
+    if (e.target === confirmBackdrop) closeConfirm();
+  });
+
+  // 工具栏删除按钮 → 打开确认框（editor.ts 通过 note:delete-request 派发）
+  window.addEventListener("note:delete-request", (e) => {
+    const rel = (e as CustomEvent<{ rel: string }>).detail?.rel;
+    if (rel) openConfirm(rel);
+  });
+
+  // 列表右键菜单（fixed 定位，防视口边缘溢出）
+  const closeCtxMenu = (): void => {
+    if (ctxMenu) ctxMenu.hidden = true;
+    ctxRel = null;
+  };
+  const showCtxMenu = (x: number, y: number): void => {
+    if (!ctxMenu) return;
+    const w = ctxMenu.offsetWidth || 160;
+    const h = ctxMenu.offsetHeight || 40;
+    ctxMenu.style.left = `${Math.min(x, window.innerWidth - w - 4)}px`;
+    ctxMenu.style.top = `${Math.min(y, window.innerHeight - h - 4)}px`;
+    ctxMenu.hidden = false;
+  };
+  document.getElementById("note-list")?.addEventListener("contextmenu", (e) => {
+    const card = (e.target as HTMLElement).closest<HTMLElement>(".note-card");
+    if (!card) return;
+    e.preventDefault();
+    ctxRel = card.dataset.path ?? null;
+    if (ctxRel) showCtxMenu(e.clientX, e.clientY);
+  });
+  document.getElementById("ctx-delete")?.addEventListener("click", () => {
+    const rel = ctxRel; // 先取再关菜单（closeCtxMenu 会清 ctxRel）
+    closeCtxMenu();
+    if (rel) openConfirm(rel);
+  });
+  document.addEventListener("click", (e) => {
+    if (ctxMenu && !(e.target as HTMLElement).closest(".ctx-menu")) closeCtxMenu();
+  });
+
+  // Esc：右键菜单 / 删除确认 关闭（设置弹层 Esc 见上方独立监听）
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (ctxMenu && !ctxMenu.hidden) closeCtxMenu();
+    if (confirmBackdrop && !confirmBackdrop.hidden) closeConfirm();
+  });
+
+  // M7 修正：键盘 Del 用全局监听（删当前选中笔记）。
+  // 原因：点卡片选中会触发 renderList() innerHTML 全量重绘，销毁刚聚焦的卡片 DOM，焦点丢失到 body，
+  // 列表内 keydown 委托因此收不到 Delete；全局监听不依赖焦点位置，排除编辑器/输入框即可。
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Delete") return;
+    const t = e.target as HTMLElement;
+    // 编辑器/输入框内 Delete 是编辑操作，绝不触发删除
+    if (t.closest(".cm-editor, input, textarea, select, [contenteditable='true']")) return;
+    const rel = selectedPath.get();
+    if (rel) {
+      e.preventDefault();
+      openConfirm(rel);
     }
   });
 }

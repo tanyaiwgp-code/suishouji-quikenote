@@ -207,6 +207,15 @@ button {
   background-color: var(--mark);
 }
 
+/* 危险按钮（M7 删除确认） */
+.btn-danger {
+  background-color: #d93025;
+  color: #ffffff;
+}
+.btn-danger:hover {
+  background-color: #c5221f;
+}
+
 /* 图标按钮 */
 .btn-icon {
   display: inline-flex;
@@ -401,7 +410,9 @@ textarea:focus:not(:focus-visible) {
 .new-menu {
   position: absolute;
   left: calc(100% + 6px);
-  top: 0;
+  /* M7 修复：＋按钮在侧栏底部，原 top:0 向下弹出会溢出窗口底部（.app overflow:hidden 裁剪），
+     「新建纯文本」选项不可见；改 bottom:0 向上弹出（上方空间充足） */
+  bottom: 0;
   display: flex;
   flex-direction: column;
   min-width: 160px;
@@ -864,6 +875,40 @@ html[data-font="large"] { --fs-body: 18px; }
   gap: var(--space-3);
   padding: var(--space-4);
 }
+
+/* M7：删除确认框底部按钮行 */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+/* M7：列表右键菜单（仿 .new-menu 配方，fixed 定位） */
+.ctx-menu {
+  position: fixed;
+  min-width: 160px;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  z-index: 30;
+}
+.ctx-menu[hidden] { display: none; }
+.ctx-menu button {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ctx-menu button:hover { background-color: var(--mark); color: #d93025; }
 .setting-row {
   display: flex;
   align-items: center;

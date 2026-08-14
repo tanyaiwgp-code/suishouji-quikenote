@@ -109,12 +109,13 @@ export interface EditorInstance {
   destroy(): void;
 }
 
-/** M4：编辑器外壳选项，全部默认 true；快速记录浮窗关闭回退按钮/模式按钮/状态栏/标题徽章。 */
+/** M4：编辑器外壳选项，全部默认 true；快速记录浮窗关闭回退按钮/模式按钮/状态栏/标题徽章；M7 增删除按钮（浮窗关闭）。 */
 export interface EditorOptions {
   backButton?: boolean;
   modeButtons?: boolean;
   statusBar?: boolean;
   titleBadge?: boolean;
+  deleteButton?: boolean;
 }
 
 /** 创建一个绑定到 target 容器的编辑器实例。 */
@@ -159,7 +160,7 @@ class Editor implements EditorInstance {
   constructor(target: HTMLElement, opts: EditorOptions = {}) {
     this.host = target;
     this.container = target;
-    this.opts = { backButton: true, modeButtons: true, statusBar: true, titleBadge: true, ...opts };
+    this.opts = { backButton: true, modeButtons: true, statusBar: true, titleBadge: true, deleteButton: true, ...opts };
     this.mode = this.opts.modeButtons ? loadMode() : "edit"; // 无模式按钮时钉死编辑态
 
     const origImageRule = this.md.renderer.rules.image;
@@ -260,6 +261,8 @@ class Editor implements EditorInstance {
             <button class="tbtn" data-cmd="import-docx" title="从 Word 导入 (DOCX)" aria-label="从 Word 导入">⇪</button>
             <button class="tbtn" data-cmd="export-docx" title="导出为 Word (DOCX)" aria-label="导出为 Word">⇓</button>
             <span class="toolbar-grow"></span>
+            ${o.deleteButton ? `
+            <button class="tbtn danger" data-cmd="delete" title="删除笔记" aria-label="删除笔记">🗑</button>` : ""}
             ${o.modeButtons ? `
             <button class="tbtn mode-btn${this.mode === "edit" ? " active" : ""}" data-mode="edit" aria-pressed="${this.mode === "edit"}">编辑</button>
             <button class="tbtn mode-btn${this.mode === "split" ? " active" : ""}" data-mode="split" aria-pressed="${this.mode === "split"}">双栏</button>
@@ -481,6 +484,10 @@ class Editor implements EditorInstance {
       void this.importDocx();
     } else if (cmd === "export-docx") {
       void this.exportDocx();
+    } else if (cmd === "delete") {
+      // M7：删除按钮 → 交由主窗口统一走确认+IPC+列表刷新（editor 不感知后端）
+      const rel = this.open?.rel;
+      if (rel) window.dispatchEvent(new CustomEvent("note:delete-request", { detail: { rel } }));
     }
   }
 

@@ -1,6 +1,6 @@
 // 轻量状态（nanostores）单测：默认值契约 + set/get 往返 + store↔search 集成编排。
 import { beforeEach, describe, expect, it } from "vitest";
-import { index, mobileView, navView, notes, query, selectedPath } from "./store";
+import { applyDelete, index, mobileView, navView, notes, query, selectedPath } from "./store";
 import type { NoteMeta } from "../types";
 
 function note(partial: Partial<NoteMeta> & { path: string }): NoteMeta {
@@ -65,5 +65,32 @@ describe("store ↔ search 编排契约", () => {
     index.build(notes.get());
     expect(index.search("会议")).toEqual([]);
     expect(index.search("旅行")).toEqual(["b.md"]);
+  });
+});
+
+describe("applyDelete 本地删除（M7）", () => {
+  it("从列表移除并重建搜索索引", () => {
+    notes.set([note({ path: "a.md", title: "会议" }), note({ path: "b.md", title: "旅行" })]);
+    index.build(notes.get());
+    applyDelete("a.md");
+    expect(notes.get().map((n) => n.path)).toEqual(["b.md"]);
+    expect(index.search("会议")).toEqual([]); // 索引同步移除
+    expect(index.search("旅行")).toEqual(["b.md"]);
+  });
+
+  it("删除当前选中项时清空 selectedPath", () => {
+    notes.set([note({ path: "a.md" }), note({ path: "b.md" })]);
+    index.build(notes.get());
+    selectedPath.set("a.md");
+    applyDelete("a.md");
+    expect(selectedPath.get()).toBeNull();
+  });
+
+  it("删除非选中项时保留当前选中", () => {
+    notes.set([note({ path: "a.md" }), note({ path: "b.md" })]);
+    index.build(notes.get());
+    selectedPath.set("b.md");
+    applyDelete("a.md");
+    expect(selectedPath.get()).toBe("b.md");
   });
 });
