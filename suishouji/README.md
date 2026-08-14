@@ -19,6 +19,9 @@
 | M3.5 维护性基建 | ✅ | 2026-08-14 |
 | M5 格式链路 | ✅ | 2026-08-14 |
 | M6 打磨发布 | ✅ | 2026-08-14 |
+| M7 安装测试修复+删除 | ✅ | 2026-08-15 |
+| M8 Playwright E2E + CI | ✅ | 2026-08-15 |
+| M9 可编辑标题 + 开源 | ✅ | 2026-08-15 |
 
 > **2026-08-14 · M5 格式链路**：① **TXT 直编** —— ＋按钮弹菜单「新建 Markdown / 新建纯文本」（命名逻辑抽成 `note-name.ts` 纯函数并测）；UTF-8 BOM 读取兼容；② **DOCX 导入 → MD** —— 新建 `core/docx.rs`（zip + roxmltree），标题/段落/表格/图片四类转 MD，图片入 assets；**安全验收**：防 ZIP 炸弹（解压总大小 ≤50MB/条目 ≤1000/单文件 ≤20MB）、防 XXE（roxmltree 禁 DTD/外部实体）、图片仅从 zip `media/` 提取（不发网络）；③ **MD 导出 → DOCX** —— 生成 Word 可打开的最小 OOXML 包（中文 UTF-8 不乱码）；④ **格式徽章** MD/TXT 已有（配色确认）；新增 2 命令（docx_import/docx_export，契约测试基线 11→13）+ `tauri-plugin-dialog` 系统对话框。Rust 单测 46 → **55**、前端 Vitest 25 → **30**，真实应用 CDP 冒烟验证 DOCX 往返 + TXT 识别。
 >
@@ -52,9 +55,10 @@
 ```bash
 npm run tauri dev     # 启动开发（前后端热重载，窗口 1280×800）
 npm run build         # 前端 tsc 类型检查 + vite 打包
-npm run check         # 前端门禁：tsc + eslint + vitest（31 项）
+npm run check         # 前端门禁：tsc + eslint + vitest（34 项）
+npm run test:e2e      # Playwright E2E（15 用例，Web 前端 + mock Tauri IPC）
 npm run tauri build   # 打包 NSIS 安装器（M6）
-cd src-tauri && cargo test --lib   # Rust 核心层单测（59 项；含 ts-rs 生成 types.gen.ts + docx/settings 测试）
+cd src-tauri && cargo test --lib   # Rust 核心层单测（64 项；含 ts-rs 生成 types.gen.ts + docx/settings 测试）
 cd src-tauri && cargo clippy --all-targets -- -D warnings   # Rust 门禁（零警告）
 bash scripts/install-hooks.sh      # 首次 clone 后启用 git hooks（pre-commit 全量门禁）
 ```
