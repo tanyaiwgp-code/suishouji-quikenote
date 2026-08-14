@@ -57,7 +57,9 @@
       "nsis": {
         "installMode": "currentUser",
         "languages": ["SimpChinese"],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "createDesktopShortcut": true,
+        "startMenuFolder": "随手记"
       }
     }
   }

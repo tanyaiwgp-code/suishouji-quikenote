@@ -10,3 +10,6 @@ desktop.ini
 # 临时 / 备份
 *.bak
 *.tmp
+
+# 发布产物（NSIS 安装器 / 绿色版 zip，不入库）
+发布/
