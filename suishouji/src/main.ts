@@ -8,6 +8,7 @@ import "./styles.css";
 import { listNotes, onNotesChanged, writeNote } from "./lib/api";
 import { createEditor, type EditorInstance } from "./lib/editor";
 import { index, mobileView, navView, notes, query, selectedPath, type NavView } from "./lib/store";
+import { buildNoteRel, inboxTimestampBase, type NoteExt } from "./lib/note-name";
 import { initTheme } from "./lib/theme";
 import { applyViewMode, renderAll, renderShell, setEditor, updateListTitle } from "./ui";
 import { isTauri } from "@tauri-apps/api/core";
@@ -39,25 +40,17 @@ async function loadNotes(): Promise<void> {
 let lastCreateBase = "";
 let createSeq = 0;
 
-async function createNote(): Promise<void> {
-  const ts = new Date();
-  const pad = (x: number) => String(x).padStart(2, "0");
-  const base =
-    `收件箱/${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}` +
-    `_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
+async function createNote(ext: NoteExt = "md"): Promise<void> {
+  const base = inboxTimestampBase();
   if (base === lastCreateBase) {
     createSeq += 1;
   } else {
     lastCreateBase = base;
     createSeq = 0;
   }
-  let rel = createSeq === 0 ? `${base}.md` : `${base}_${createSeq}.md`;
   // 兜底：与磁盘上已存在的笔记路径查重（跨会话同名文件）
-  const used = new Set(notes.get().map((n) => n.path));
-  while (used.has(rel)) {
-    createSeq += 1;
-    rel = `${base}_${createSeq}.md`;
-  }
+  const { rel, seq } = buildNoteRel(base, ext, createSeq, notes.get().map((n) => n.path));
+  createSeq = seq;
   try {
     await writeNote(rel, "");
     selectedPath.set(rel);
@@ -104,8 +97,23 @@ function wireEvents(editor: EditorInstance): void {
     });
   });
 
-  // 新建
-  document.getElementById("new-note")?.addEventListener("click", () => void createNote());
+  // 新建：＋按钮弹出「新建 Markdown / 新建纯文本」菜单（M5）
+  const newMenu = document.getElementById("new-menu") as HTMLElement | null;
+  document.getElementById("new-note")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (newMenu) newMenu.hidden = !newMenu.hidden;
+  });
+  newMenu?.querySelectorAll("button[data-ext]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      newMenu.hidden = true;
+      void createNote((btn as HTMLElement).dataset.ext as NoteExt);
+    });
+  });
+  document.addEventListener("click", (e) => {
+    if (newMenu && !(e.target as HTMLElement).closest(".new-menu-wrap")) {
+      newMenu.hidden = true;
+    }
+  });
 
   // 笔记列表点击（事件委托）
   document.getElementById("note-list")?.addEventListener("click", (e) => {

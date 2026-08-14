@@ -20,12 +20,16 @@ import MarkdownIt from "markdown-it";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   acquireNoteLock,
   ApiError,
   assetsImport,
   assetsImportBase64,
   convertFileSrc,
+  docxExport,
+  docxImport,
+  listNotes,
   noteAbsPath,
   readNote,
   releaseNoteLock,
@@ -247,6 +251,8 @@ class Editor implements EditorInstance {
             <button class="tbtn" data-cmd="image" title="插入图片" aria-label="插入图片">▦</button>
             <span class="toolbar-sep"></span>
             <button class="tbtn" data-cmd="export" title="复制 Markdown" aria-label="复制 Markdown">⧉</button>
+            <button class="tbtn" data-cmd="import-docx" title="从 Word 导入 (DOCX)" aria-label="从 Word 导入">⇪</button>
+            <button class="tbtn" data-cmd="export-docx" title="导出为 Word (DOCX)" aria-label="导出为 Word">⇓</button>
             <span class="toolbar-grow"></span>
             ${o.modeButtons ? `
             <button class="tbtn mode-btn${this.mode === "edit" ? " active" : ""}" data-mode="edit">编辑</button>
@@ -464,6 +470,10 @@ class Editor implements EditorInstance {
       this.insertCodeBlock();
     } else if (cmd === "export") {
       void this.exportMarkdown();
+    } else if (cmd === "import-docx") {
+      void this.importDocx();
+    } else if (cmd === "export-docx") {
+      void this.exportDocx();
     }
   }
 
@@ -557,6 +567,53 @@ class Editor implements EditorInstance {
         this.setSave("复制失败", "error");
       }
       ta.remove();
+    }
+  }
+
+  // --- M5：DOCX 导入导出（系统对话框） ---
+
+  /** 导出当前笔记为 Word (DOCX)：save 对话框选保存位置 → docxExport 写盘。 */
+  private async exportDocx(): Promise<void> {
+    if (!this.open) {
+      this.setSave("请先选择一篇笔记", "error");
+      return;
+    }
+    const rel = this.open.rel;
+    const defaultName = rel.split("/").pop()?.replace(/\.[^.]+$/, "") || "笔记";
+    try {
+      const path = await save({
+        title: "导出为 Word 文档",
+        defaultPath: `${defaultName}.docx`,
+        filters: [{ name: "Word 文档", extensions: ["docx"] }],
+      });
+      if (!path) return; // 用户取消
+      await docxExport(rel, path);
+      this.setSave("已导出 Word 文档", "saved");
+    } catch (err) {
+      this.setSave(errText(err), "error");
+    }
+  }
+
+  /** 从 Word (DOCX) 导入 → 转 MD 存库：open 对话框选文件 → docxImport（后端 emit 刷新列表）。 */
+  private async importDocx(): Promise<void> {
+    try {
+      const picked = await open({
+        title: "从 Word 导入",
+        filters: [{ name: "Word 文档", extensions: ["docx"] }],
+        multiple: false,
+      });
+      if (!picked || typeof picked !== "string") return; // 用户取消
+      // 目标：收件箱/<源文件名>.md（非法字符清理 + 去重）
+      const raw = picked.split(/[\\/]/).pop()?.replace(/\.docx$/i, "") || "导入";
+      const safe = raw.replace(/[<>:"/\\|?*]/g, "_") || "导入";
+      const existing = new Set((await listNotes()).map((n) => n.path));
+      let rel = `收件箱/${safe}.md`;
+      let i = 1;
+      while (existing.has(rel)) rel = `收件箱/${safe}_${i++}.md`;
+      await docxImport(picked, rel);
+      this.setSave("已从 Word 导入", "saved");
+    } catch (err) {
+      this.setSave(errText(err), "error");
     }
   }
 

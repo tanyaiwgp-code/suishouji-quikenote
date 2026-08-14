@@ -2,6 +2,7 @@
 // 复用编辑器工厂的精简壳（隐藏返回键/模式按钮/状态栏/标题徽章，保留工具栏图片按钮）。
 import "./styles.css";
 import { deleteNote, hideQuicknote, listNotes, openMainWindow, writeNote } from "./lib/api";
+import { buildNoteRel, inboxTimestampBase } from "./lib/note-name";
 import { createEditor, type EditorInstance } from "./lib/editor";
 import { initTheme } from "./lib/theme";
 import { isTauri } from "@tauri-apps/api/core";
@@ -13,27 +14,19 @@ let currentRel = "";
 let lastDraftBase = "";
 let draftSeq = 0;
 
-const pad = (x: number) => String(x).padStart(2, "0");
-
-/** 新建一条收件箱草稿（时间戳命名，镜像 main.ts createNote 的查重逻辑）。 */
+/** 新建一条收件箱草稿（时间戳命名，镜像 main.ts createNote 的查重逻辑，固定 .md）。 */
 async function draftNew(): Promise<void> {
-  const ts = new Date();
-  const base =
-    `收件箱/${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())}` +
-    `_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`;
+  const base = inboxTimestampBase();
   if (base === lastDraftBase) {
     draftSeq += 1;
   } else {
     lastDraftBase = base;
     draftSeq = 0;
   }
-  let rel = draftSeq === 0 ? `${base}.md` : `${base}_${draftSeq}.md`;
   try {
-    const used = new Set((await listNotes()).map((n) => n.path));
-    while (used.has(rel)) {
-      draftSeq += 1;
-      rel = `${base}_${draftSeq}.md`;
-    }
+    const existing = (await listNotes()).map((n) => n.path);
+    const { rel, seq } = buildNoteRel(base, "md", draftSeq, existing);
+    draftSeq = seq;
     await writeNote(rel, "");
     const meta = (await listNotes()).find((n) => n.path === rel) ?? null;
     if (!meta) return;

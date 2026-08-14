@@ -69,12 +69,14 @@ describe("命令名 4 清单契约", () => {
 
   it("命令名全集已建立基线（防空白/误提取）", () => {
     const build = sortedUnique(commandsFromBuild());
-    // M0-M4 已交付 11 个命令；新增命令时应同时更新此基线
+    // M0-M5 已交付 13 个命令；新增命令时应同时更新此基线
     expect(build).toEqual([
       "acquire_note_lock",
       "assets_import",
       "assets_import_base64",
       "delete_note",
+      "docx_export",
+      "docx_import",
       "hide_quicknote",
       "list_notes",
       "note_abs_path",

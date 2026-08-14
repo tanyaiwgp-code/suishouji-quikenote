@@ -7,6 +7,8 @@ import {
   assetsImport,
   assetsImportBase64,
   deleteNote,
+  docxExport,
+  docxImport,
   hideQuicknote,
   listNotes,
   noteAbsPath,
@@ -84,6 +86,22 @@ describe("命令名与参数形状", () => {
     expect(mockedInvoke).toHaveBeenCalledWith("open_main_window", undefined);
     await hideQuicknote();
     expect(mockedInvoke).toHaveBeenCalledWith("hide_quicknote", undefined);
+  });
+
+  it("docx 导入导出命令参数形状", async () => {
+    mockedInvoke.mockResolvedValue("收件箱/会议纪要.md");
+    await docxImport("C:\\x\\会议纪要.docx", "收件箱/会议纪要.md");
+    expect(mockedInvoke).toHaveBeenCalledWith("docx_import", {
+      sourcePath: "C:\\x\\会议纪要.docx",
+      targetRel: "收件箱/会议纪要.md",
+    });
+
+    mockedInvoke.mockResolvedValue(undefined);
+    await docxExport("收件箱/会议纪要.md", "C:\\out\\会议纪要.docx");
+    expect(mockedInvoke).toHaveBeenCalledWith("docx_export", {
+      rel: "收件箱/会议纪要.md",
+      targetPath: "C:\\out\\会议纪要.docx",
+    });
   });
 });
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-docx-export"
+description = "Enables the docx_export command without any pre-configured scope."
+commands.allow = ["docx_export"]
+
+[[permission]]
+identifier = "deny-docx-export"
+description = "Denies the docx_export command without any pre-configured scope."
+commands.deny = ["docx_export"]

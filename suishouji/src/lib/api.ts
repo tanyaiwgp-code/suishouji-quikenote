@@ -75,6 +75,16 @@ export const assetsImportBase64 = (
 /** 返回笔记绝对路径（供 convertFileSrc 渲染 assets/ 图片）。 */
 export const noteAbsPath = (rel: string): Promise<string> => invokeOrThrow<string>("note_abs_path", { rel });
 
+// --- M5：DOCX 导入导出 ---
+
+/** 导入 DOCX（源文件路径 + 目标 md 相对路径）→ 转 MD 存库，返回新笔记 rel。 */
+export const docxImport = (sourcePath: string, targetRel: string): Promise<string> =>
+  invokeOrThrow<string>("docx_import", { sourcePath, targetRel });
+
+/** 导出当前 MD 笔记为 DOCX（写入用户选择的保存路径）。 */
+export const docxExport = (rel: string, targetPath: string): Promise<void> =>
+  invokeOrThrow<void>("docx_export", { rel, targetPath });
+
 /** 导出 convertFileSrc，供预览图片路径重写。 */
 export { convertFileSrc };
 

@@ -17,9 +17,11 @@
 | M4 前置 editor.ts 工厂化 | ✅ | 2026-08-14 |
 | M4 浮窗托盘快捷键 | ✅ | 2026-08-14 |
 | M3.5 维护性基建 | ✅ | 2026-08-14 |
-| M5 格式链路 | ⬜ 待开始 | — |
+| M5 格式链路 | ✅ | 2026-08-14 |
 | M6 打磨发布 | ⬜ 待开始 | — |
 
+> **2026-08-14 · M5 格式链路**：① **TXT 直编** —— ＋按钮弹菜单「新建 Markdown / 新建纯文本」（命名逻辑抽成 `note-name.ts` 纯函数并测）；UTF-8 BOM 读取兼容；② **DOCX 导入 → MD** —— 新建 `core/docx.rs`（zip + roxmltree），标题/段落/表格/图片四类转 MD，图片入 assets；**安全验收**：防 ZIP 炸弹（解压总大小 ≤50MB/条目 ≤1000/单文件 ≤20MB）、防 XXE（roxmltree 禁 DTD/外部实体）、图片仅从 zip `media/` 提取（不发网络）；③ **MD 导出 → DOCX** —— 生成 Word 可打开的最小 OOXML 包（中文 UTF-8 不乱码）；④ **格式徽章** MD/TXT 已有（配色确认）；新增 2 命令（docx_import/docx_export，契约测试基线 11→13）+ `tauri-plugin-dialog` 系统对话框。
+>
 > **2026-08-14 · M3.5 代码审视与加固**：对 M0-M3 全量审视（安全/功能/性能），修复并验证 7 项：
 > **S1** 预览链接 scheme 白名单（防 `javascript:` 执行/整页导航）、**B1** 文件锁泄漏、**B2** 关窗落盘、
 > **B4** 删除清理孤儿 assets、**B5** 新建文件名防碰撞、**S2** 主题防闪改外部脚本（CSP 兼容）、
@@ -41,16 +43,16 @@
 > 命令名 4 清单（api.ts / commands.rs / build.rs / capabilities）由 contract.test.ts 契约测试锁定；
 > ③ **错误结构化**：后端 `Result<T, CommandError>`（`{code,message}` 8 码映射），前端 `ApiError.from` 多形态解析；
 > ④ **门禁**：`npm run check`（tsc+eslint+vitest）、`cargo clippy -- -D warnings`、git hooks（pre-commit 全量）、
-> 预留 `.github/workflows/ci.yml`（推 GitHub 自动生效）。Rust 单测 43 → **46**。
+> 预留 `.github/workflows/ci.yml`（推 GitHub 自动生效）。Rust 单测 43 → **55**。
 
 ## 常用命令
 
 ```bash
 npm run tauri dev     # 启动开发（前后端热重载，窗口 1280×800）
 npm run build         # 前端 tsc 类型检查 + vite 打包
-npm run check         # 前端门禁：tsc + eslint + vitest（25 项）
+npm run check         # 前端门禁：tsc + eslint + vitest（30 项）
 npm run tauri build   # 打包安装器（M6 验证）
-cd src-tauri && cargo test --lib   # Rust 核心层单测（46 项；含 ts-rs 生成 types.gen.ts）
+cd src-tauri && cargo test --lib   # Rust 核心层单测（55 项；含 ts-rs 生成 types.gen.ts + docx 测试）
 cd src-tauri && cargo clippy --all-targets -- -D warnings   # Rust 门禁（零警告）
 bash scripts/install-hooks.sh      # 首次 clone 后启用 git hooks（pre-commit 全量门禁）
 ```
@@ -59,16 +61,6 @@ bash scripts/install-hooks.sh      # 首次 clone 后启用 git hooks（pre-comm
 > `export PATH="/e/rust/.cargo/bin:$PATH" RUSTUP_HOME="E:\\rust\\.rustup" CARGO_HOME="E:\\rust\\.cargo"`
 >
 > 改 Rust 模型字段/序列化名后记得跑 `cargo test --lib` 重新生成 `types.gen.ts`（入库）；CI 会校验生成一致性。
-
-```bash
-npm run tauri dev     # 启动开发（前后端热重载，窗口 1280×800）
-npm run build         # 前端 tsc 类型检查 + vite 打包
-npm run tauri build   # 打包安装器（M6 验证）
-cd src-tauri && cargo test --lib   # Rust 核心层单测（43 项）
-```
-
-> Rust 工具链在 `E:\rust\`，新终端需先：
-> `export PATH="/e/rust/.cargo/bin:$PATH" RUSTUP_HOME="E:\\rust\\.rustup" CARGO_HOME="E:\\rust\\.cargo"`
 
 ## 目录结构
 
@@ -82,12 +74,14 @@ src-tauri/src/
 │   ├── filelock.rs     # 进程内文件锁
 │   ├── watcher.rs      # notify 文件监听（M2-4）
 │   ├── model.rs    # NoteMeta/NoteFormat/AssetImport（TS derive → types.gen.ts）
-│   └── error.rs    # Error 枚举（code() 映射）+ CommandError（IPC 结构化错误）
+│   ├── error.rs    # Error 枚举（code() 映射）+ CommandError（IPC 结构化错误）
+│   └── docx.rs     # M5 DOCX 导入导出（zip+roxmltree；防 XXE/防 ZIP 炸弹/图片不发网络）
 ├── commands.rs     # IPC 命令薄封装（Result<T, CommandError>，白名单：build.rs AppManifest）
 src/
 ├── lib/            # api.ts（类型化 invoke + ApiError）/ search.ts（倒排索引）/ store.ts（nanostores）/ theme.ts（initTheme）
+├── lib/note-name.ts    # 收件箱时间戳命名纯函数（M5：MD/TXT 新建共用）
 ├── lib/types.gen.ts    # ts-rs 自动生成（勿手改；cargo test 重写）
-├── lib/*.test.ts       # Vitest 单测：search/store/api/contract（命令名契约）
+├── lib/*.test.ts       # Vitest 单测：search/store/api/contract/note-name（契约/命名）
 ├── lib/editor.ts   # createEditor(target, opts) 工厂：CodeMirror 6 + markdown-it + 自动保存 + 图片 + 锁 + 精简壳选项（M3/M4）
 ├── ui.ts           # 渲染（列表/编辑器占位/空状态；setEditor 注入编辑器实例）
 ├── quicknote.ts    # 快速记录浮窗入口（M4：草稿自动落盘/标题 frontmatter/快捷键）

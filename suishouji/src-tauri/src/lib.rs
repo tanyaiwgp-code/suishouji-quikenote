@@ -41,6 +41,8 @@ pub fn run() {
         }))
         .plugin(shortcut_plugin)
         .plugin(tauri_plugin_opener::init())
+        // M5：系统文件对话框（open 导入 DOCX / save 导出 DOCX）
+        .plugin(tauri_plugin_dialog::init())
         // M4-4：开机自启（Windows 注册表 Run 键；macOS 用 LaunchAgent，Windows 忽略）
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         // M4-5：窗口状态记忆（位置/尺寸），不记忆可见性：
@@ -63,6 +65,8 @@ pub fn run() {
             commands::note_abs_path,
             commands::open_main_window,
             commands::hide_quicknote,
+            commands::docx_import,
+            commands::docx_export,
         ])
         .setup(|app| {
             // M2-4：监听笔记根目录，外部修改 → 通知前端刷新列表

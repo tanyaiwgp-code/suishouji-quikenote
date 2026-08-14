@@ -300,6 +300,23 @@ impl FsStore {
         Ok(path.to_string_lossy().into_owned())
     }
 
+    /// M5：读取笔记 `assets/` 下的图片字节（DOCX 导出嵌入用）。
+    /// `asset_src` 是 Markdown 里的图片相对引用（相对笔记所在目录），
+    /// 经 `PathGuard::relative` 校验在根内 + `resolve` 规范化，防 `../` 逃逸与符号链接。
+    pub fn read_asset_bytes(&self, note_rel: &str, asset_src: &str) -> Result<Vec<u8>, Error> {
+        let note_abs = self.guard.resolve(note_rel)?;
+        let dir = note_abs
+            .parent()
+            .ok_or_else(|| Error::InvalidPath(note_rel.to_string()))?;
+        let candidate = dir.join(asset_src);
+        let rel = self.guard.relative(&candidate)?;
+        let abs = self.guard.resolve(&rel)?;
+        if !abs.is_file() {
+            return Err(Error::NotFound(asset_src.to_string()));
+        }
+        std::fs::read(&abs).map_err(Into::into)
+    }
+
     /// 统一放置逻辑：校验源为图片且未超限，复制到目标，返回相对引用。
     fn place_asset(&self, note_rel: &str, src: &Path, display: &Path) -> Result<AssetImport, Error> {
         let note = self.guard.resolve(note_rel)?;

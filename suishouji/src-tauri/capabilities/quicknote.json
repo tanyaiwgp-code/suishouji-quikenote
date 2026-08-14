@@ -16,6 +16,9 @@
     "allow-assets-import-base64",
     "allow-note-abs-path",
     "allow-open-main-window",
-    "allow-hide-quicknote"
+    "allow-hide-quicknote",
+    "allow-docx-import",
+    "allow-docx-export",
+    "dialog:default"
   ]
 }

@@ -18,6 +18,8 @@ fn main() {
                 "note_abs_path",
                 "open_main_window",
                 "hide_quicknote",
+                "docx_import",
+                "docx_export",
             ]),
         ),
     )

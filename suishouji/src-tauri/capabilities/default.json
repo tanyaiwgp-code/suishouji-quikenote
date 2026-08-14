@@ -15,6 +15,9 @@
     "allow-release-note-lock",
     "allow-assets-import",
     "allow-assets-import-base64",
-    "allow-note-abs-path"
+    "allow-note-abs-path",
+    "allow-docx-import",
+    "allow-docx-export",
+    "dialog:default"
   ]
 }

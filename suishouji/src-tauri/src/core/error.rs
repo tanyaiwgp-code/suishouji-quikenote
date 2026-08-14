@@ -32,6 +32,22 @@ pub enum Error {
     #[error("单笔记图片数已达上限（50 张）：{0}")]
     ImageLimitReached(String),
 
+    /// M5：文件格式不受支持（非 docx / zip 结构缺失）。
+    #[error("不支持的格式：{0}")]
+    UnsupportedFormat(String),
+
+    /// M5：DOCX 解压体积超限（防 ZIP 炸弹 / 单文件过大）。
+    #[error("导入文件过大：{0}")]
+    ImportTooLarge(String),
+
+    /// M5：DOCX 解析失败（结构损坏 / XML 非法）。
+    #[error("导入失败：{0}")]
+    ImportFailed(String),
+
+    /// M5：DOCX 导出失败（生成 / 写盘）。
+    #[error("导出失败：{0}")]
+    ExportFailed(String),
+
     /// 底层 IO 错误。
     #[error("IO 错误：{0}")]
     Io(#[from] std::io::Error),
@@ -49,6 +65,10 @@ impl Error {
             Error::UnsupportedType(_) => "unsupported_type",
             Error::ImageTooLarge(_) => "image_too_large",
             Error::ImageLimitReached(_) => "image_limit_reached",
+            Error::UnsupportedFormat(_) => "unsupported_format",
+            Error::ImportTooLarge(_) => "import_too_large",
+            Error::ImportFailed(_) => "import_failed",
+            Error::ExportFailed(_) => "export_failed",
             Error::Io(_) => "io",
         }
     }
@@ -93,6 +113,10 @@ mod tests {
             (Error::UnsupportedType("a".into()), "unsupported_type"),
             (Error::ImageTooLarge("a".into()), "image_too_large"),
             (Error::ImageLimitReached("a".into()), "image_limit_reached"),
+            (Error::UnsupportedFormat("a".into()), "unsupported_format"),
+            (Error::ImportTooLarge("a".into()), "import_too_large"),
+            (Error::ImportFailed("a".into()), "import_failed"),
+            (Error::ExportFailed("a".into()), "export_failed"),
             (Error::Io(io::Error::other("x")), "io"),
         ];
         let mut seen = std::collections::HashSet::new();

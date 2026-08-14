@@ -35,7 +35,13 @@ export function renderShell(): void {
           <button class="nav-item" data-view="pinned" title="收藏" aria-label="收藏">☆</button>
           <button class="nav-item" title="标签（后续版本）" aria-label="标签" disabled>#</button>
           <span class="nav-grow"></span>
-          <button class="nav-item accent" id="new-note" title="新建笔记" aria-label="新建笔记">＋</button>
+          <span class="new-menu-wrap">
+            <button class="nav-item accent" id="new-note" title="新建笔记" aria-label="新建笔记" aria-haspopup="menu">＋</button>
+            <div class="new-menu" id="new-menu" role="menu" hidden>
+              <button type="button" role="menuitem" data-ext="md">新建 Markdown</button>
+              <button type="button" role="menuitem" data-ext="txt">新建纯文本</button>
+            </div>
+          </span>
         </nav>
         <aside class="col-list">
           <div class="list-head">
