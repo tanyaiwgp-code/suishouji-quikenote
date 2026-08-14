@@ -20,7 +20,7 @@
 | M5 格式链路 | ✅ | 2026-08-14 |
 | M6 打磨发布 | ⬜ 待开始 | — |
 
-> **2026-08-14 · M5 格式链路**：① **TXT 直编** —— ＋按钮弹菜单「新建 Markdown / 新建纯文本」（命名逻辑抽成 `note-name.ts` 纯函数并测）；UTF-8 BOM 读取兼容；② **DOCX 导入 → MD** —— 新建 `core/docx.rs`（zip + roxmltree），标题/段落/表格/图片四类转 MD，图片入 assets；**安全验收**：防 ZIP 炸弹（解压总大小 ≤50MB/条目 ≤1000/单文件 ≤20MB）、防 XXE（roxmltree 禁 DTD/外部实体）、图片仅从 zip `media/` 提取（不发网络）；③ **MD 导出 → DOCX** —— 生成 Word 可打开的最小 OOXML 包（中文 UTF-8 不乱码）；④ **格式徽章** MD/TXT 已有（配色确认）；新增 2 命令（docx_import/docx_export，契约测试基线 11→13）+ `tauri-plugin-dialog` 系统对话框。
+> **2026-08-14 · M5 格式链路**：① **TXT 直编** —— ＋按钮弹菜单「新建 Markdown / 新建纯文本」（命名逻辑抽成 `note-name.ts` 纯函数并测）；UTF-8 BOM 读取兼容；② **DOCX 导入 → MD** —— 新建 `core/docx.rs`（zip + roxmltree），标题/段落/表格/图片四类转 MD，图片入 assets；**安全验收**：防 ZIP 炸弹（解压总大小 ≤50MB/条目 ≤1000/单文件 ≤20MB）、防 XXE（roxmltree 禁 DTD/外部实体）、图片仅从 zip `media/` 提取（不发网络）；③ **MD 导出 → DOCX** —— 生成 Word 可打开的最小 OOXML 包（中文 UTF-8 不乱码）；④ **格式徽章** MD/TXT 已有（配色确认）；新增 2 命令（docx_import/docx_export，契约测试基线 11→13）+ `tauri-plugin-dialog` 系统对话框。Rust 单测 46 → **55**、前端 Vitest 25 → **30**，真实应用 CDP 冒烟验证 DOCX 往返 + TXT 识别。
 >
 > **2026-08-14 · M3.5 代码审视与加固**：对 M0-M3 全量审视（安全/功能/性能），修复并验证 7 项：
 > **S1** 预览链接 scheme 白名单（防 `javascript:` 执行/整页导航）、**B1** 文件锁泄漏、**B2** 关窗落盘、
@@ -43,7 +43,7 @@
 > 命令名 4 清单（api.ts / commands.rs / build.rs / capabilities）由 contract.test.ts 契约测试锁定；
 > ③ **错误结构化**：后端 `Result<T, CommandError>`（`{code,message}` 8 码映射），前端 `ApiError.from` 多形态解析；
 > ④ **门禁**：`npm run check`（tsc+eslint+vitest）、`cargo clippy -- -D warnings`、git hooks（pre-commit 全量）、
-> 预留 `.github/workflows/ci.yml`（推 GitHub 自动生效）。Rust 单测 43 → **55**。
+> 预留 `.github/workflows/ci.yml`（推 GitHub 自动生效）。Rust 单测 43 → **46**（M5 后 55）。
 
 ## 常用命令
 
