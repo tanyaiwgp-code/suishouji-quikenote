@@ -16,6 +16,7 @@
 | M3.5 代码审视与加固 | ✅ | 2026-08-14 |
 | M4 前置 editor.ts 工厂化 | ✅ | 2026-08-14 |
 | M4 浮窗托盘快捷键 | ✅ | 2026-08-14 |
+| M3.5 维护性基建 | ✅ | 2026-08-14 |
 | M5 格式链路 | ⬜ 待开始 | — |
 | M6 打磨发布 | ⬜ 待开始 | — |
 
@@ -33,9 +34,31 @@
 > 草稿时间戳命名自动落盘 `收件箱/`、标题入 frontmatter，Ctrl+Enter 存并关 / Ctrl+Shift+Enter 存并开主窗 / Esc 丢弃；
 > 单实例二次启动聚焦主窗；窗口位置/尺寸记忆；**主窗口 X 改为隐藏到托盘**（进程存活，退出走托盘）。
 > 4 个官方插件（global-shortcut / single-instance / autostart / window-state，Rust-only 集成）。
-> 剩余维护性项（前端测试、CI 等）为 M5/M6 后续项。
+>
+> **2026-08-14 · M3.5 维护性基建**（M5 前置，解决审视遗留 4 项风险）：
+> ① **前端测试**：Vitest 纯逻辑单测（search/store/api/contract 共 25 项，node 环境无 DOM）；
+> ② **类型防漂移**：ts-rs 从 `core/model.rs` 生成 `src/lib/types.gen.ts`（改模型跑 `cargo test` 即同步），
+> 命令名 4 清单（api.ts / commands.rs / build.rs / capabilities）由 contract.test.ts 契约测试锁定；
+> ③ **错误结构化**：后端 `Result<T, CommandError>`（`{code,message}` 8 码映射），前端 `ApiError.from` 多形态解析；
+> ④ **门禁**：`npm run check`（tsc+eslint+vitest）、`cargo clippy -- -D warnings`、git hooks（pre-commit 全量）、
+> 预留 `.github/workflows/ci.yml`（推 GitHub 自动生效）。Rust 单测 43 → **46**。
 
 ## 常用命令
+
+```bash
+npm run tauri dev     # 启动开发（前后端热重载，窗口 1280×800）
+npm run build         # 前端 tsc 类型检查 + vite 打包
+npm run check         # 前端门禁：tsc + eslint + vitest（25 项）
+npm run tauri build   # 打包安装器（M6 验证）
+cd src-tauri && cargo test --lib   # Rust 核心层单测（46 项；含 ts-rs 生成 types.gen.ts）
+cd src-tauri && cargo clippy --all-targets -- -D warnings   # Rust 门禁（零警告）
+bash scripts/install-hooks.sh      # 首次 clone 后启用 git hooks（pre-commit 全量门禁）
+```
+
+> Rust 工具链在 `E:\rust\`，新终端需先：
+> `export PATH="/e/rust/.cargo/bin:$PATH" RUSTUP_HOME="E:\\rust\\.rustup" CARGO_HOME="E:\\rust\\.cargo"`
+>
+> 改 Rust 模型字段/序列化名后记得跑 `cargo test --lib` 重新生成 `types.gen.ts`（入库）；CI 会校验生成一致性。
 
 ```bash
 npm run tauri dev     # 启动开发（前后端热重载，窗口 1280×800）
@@ -57,15 +80,21 @@ src-tauri/src/
 │   ├── encoding.rs # UTF-8/GBK/GB2312 检测解码
 │   ├── pathguard.rs    # 路径遍历防护（canonicalize + 前缀校验）
 │   ├── filelock.rs     # 进程内文件锁
-│   └── watcher.rs      # notify 文件监听（M2-4）
-├── commands.rs     # IPC 命令薄封装（白名单：build.rs AppManifest）
+│   ├── watcher.rs      # notify 文件监听（M2-4）
+│   ├── model.rs    # NoteMeta/NoteFormat/AssetImport（TS derive → types.gen.ts）
+│   └── error.rs    # Error 枚举（code() 映射）+ CommandError（IPC 结构化错误）
+├── commands.rs     # IPC 命令薄封装（Result<T, CommandError>，白名单：build.rs AppManifest）
 src/
-├── lib/            # api.ts（类型化 invoke）/ search.ts（倒排索引）/ store.ts（nanostores）/ theme.ts（initTheme）
+├── lib/            # api.ts（类型化 invoke + ApiError）/ search.ts（倒排索引）/ store.ts（nanostores）/ theme.ts（initTheme）
+├── lib/types.gen.ts    # ts-rs 自动生成（勿手改；cargo test 重写）
+├── lib/*.test.ts       # Vitest 单测：search/store/api/contract（命令名契约）
 ├── lib/editor.ts   # createEditor(target, opts) 工厂：CodeMirror 6 + markdown-it + 自动保存 + 图片 + 锁 + 精简壳选项（M3/M4）
 ├── ui.ts           # 渲染（列表/编辑器占位/空状态；setEditor 注入编辑器实例）
 ├── quicknote.ts    # 快速记录浮窗入口（M4：草稿自动落盘/标题 frontmatter/快捷键）
 └── main.ts         # 主窗口入口（主题/搜索/导航/新建/文件监听/关窗→托盘）
 index.html / quicknote.html   # 双入口（vite build.rollupOptions.input）
+.githooks/pre-commit        # git hooks（npm run check + cargo test + clippy）
+eslint.config.js            # eslint 10 flat config（typescript-eslint recommended）
 public/
 └── theme-init.js   # 主题防闪外部脚本（满足 CSP script-src 'self'，S2）
 ```

@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import { fileURLToPath, URL } from "node:url";
 
@@ -36,5 +37,9 @@ export default defineConfig(async () => ({
         quicknote: fileURLToPath(new URL("./quicknote.html", import.meta.url)),
       },
     },
+  },
+  // Vitest：纯逻辑单测（node 环境，无 DOM），测试文件与源码同目录 `*.test.ts`
+  test: {
+    environment: "node",
   },
 }));

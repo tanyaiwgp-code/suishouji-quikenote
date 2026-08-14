@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# pre-commit 门禁：前端（tsc + eslint + vitest）→ Rust（cargo test + clippy）。
+# 首次需运行 scripts/install-hooks.sh 激活（git config core.hooksPath .githooks）。
+# 若嫌全量 Rust 门禁慢，可删除下方 cargo 部分，保留 npm run check；Rust 门禁交给 CI。
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)/suishouji"
+
+echo "▸ npm run check (typecheck + eslint + vitest)"
+npm run check
+
+echo "▸ cargo test --lib"
+cd src-tauri
+# Rust 工具链不在默认 PATH（本机安装在 E:\rust\），按 README 约定注入
+export PATH="/e/rust/.cargo/bin:$PATH"
+export RUSTUP_HOME="E:\\rust\\.rustup"
+export CARGO_HOME="E:\\rust\\.cargo"
+cargo test --lib
+
+echo "▸ cargo clippy -- -D warnings"
+cargo clippy --all-targets -- -D warnings
+
+echo "✓ 全部门禁通过"

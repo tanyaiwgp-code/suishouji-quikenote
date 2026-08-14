@@ -1,17 +1,3 @@
-// 与 Rust core::model::NoteMeta 对应的 TS 镜像（camelCase 一致）
-
-export type NoteFormat = "md" | "txt";
-
-export interface NoteMeta {
-  id: string;
-  title: string;
-  path: string;
-  format: NoteFormat;
-  mtime: number;
-  imageCount: number;
-  tags: string[];
-  pinned: boolean;
-  preview: string;
-  /** 正文前 500 字，供搜索倒排索引（M2-3） */
-  searchText: string;
-}
+// 由 ts-rs 从 Rust core::model 自动生成（types.gen.ts），消除手写镜像漂移。
+// 改 Rust 模型字段/序列化名后，跑 `cd src-tauri && cargo test --lib` 即重新生成。
+export * from "./lib/types.gen";

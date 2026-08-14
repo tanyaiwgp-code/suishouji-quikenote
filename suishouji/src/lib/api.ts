@@ -1,38 +1,79 @@
-// 类型化 IPC 封装（薄封装，命令名与 Rust commands.rs / build.rs 白名单一致）
+// 类型化 IPC 封装（薄封装，命令名与 Rust commands.rs / build.rs 白名单 / capabilities 一致，
+// 由 contract.test.ts 契约测试锁定）。
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { NoteMeta } from "../types";
+import type { NoteMeta, AssetImport } from "../types";
 
-export const listNotes = (): Promise<NoteMeta[]> => invoke<NoteMeta[]>("list_notes");
-export const readNote = (rel: string): Promise<string> => invoke<string>("read_note", { rel });
+// --- 结构化错误 ---
+// Rust 端 CommandError 序列化为 { code, message }（见 src-tauri/src/core/error.rs）。
+// Tauri 前端 reject 的实际形态可能是对象本身，也可能是 Error.message 里的 JSON 字符串，
+// 故 from() 做多形态解析；无法解析时 fallback code="unknown"。
+export class ApiError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+  }
+
+  static from(err: unknown): ApiError {
+    // 形态 1：Rust 端结构化对象 { code, message }
+    if (typeof err === "object" && err !== null) {
+      const obj = err as { code?: unknown; message?: unknown };
+      if (typeof obj.code === "string" && typeof obj.message === "string") {
+        return new ApiError(obj.code, obj.message);
+      }
+    }
+    // 形态 2：Error.message 为 JSON 字符串 {"code":...,"message":...}
+    const raw = err instanceof Error ? err.message : String(err);
+    try {
+      const parsed = JSON.parse(raw) as { code?: unknown; message?: unknown };
+      if (typeof parsed.code === "string" && typeof parsed.message === "string") {
+        return new ApiError(parsed.code, parsed.message);
+      }
+    } catch {
+      // 非 JSON，落入形态 3
+    }
+    // 形态 3：纯字符串（无结构），去掉 "Error: " 前缀
+    return new ApiError("unknown", raw.replace(/^Error:\s*/, ""));
+  }
+}
+
+/** invoke 包装：rejection 统一转 ApiError，供上层按 code 分支。 */
+async function invokeOrThrow<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(cmd, args);
+  } catch (err) {
+    throw ApiError.from(err);
+  }
+}
+
+export const listNotes = (): Promise<NoteMeta[]> => invokeOrThrow<NoteMeta[]>("list_notes");
+export const readNote = (rel: string): Promise<string> => invokeOrThrow<string>("read_note", { rel });
 export const writeNote = (rel: string, content: string): Promise<void> =>
-  invoke<void>("write_note", { rel, content });
-export const deleteNote = (rel: string): Promise<void> => invoke<void>("delete_note", { rel });
+  invokeOrThrow<void>("write_note", { rel, content });
+export const deleteNote = (rel: string): Promise<void> => invokeOrThrow<void>("delete_note", { rel });
 export const acquireNoteLock = (rel: string): Promise<void> =>
-  invoke<void>("acquire_note_lock", { rel });
+  invokeOrThrow<void>("acquire_note_lock", { rel });
 export const releaseNoteLock = (rel: string): Promise<void> =>
-  invoke<void>("release_note_lock", { rel });
+  invokeOrThrow<void>("release_note_lock", { rel });
 
 // --- M3：图片导入 & 绝对路径 ---
 
-export interface AssetImport {
-  rel: string;
-  count: number;
-}
-
 /** 拖入图片：Rust 复制到 `笔记名/assets/`，返回相对引用。 */
 export const assetsImport = (noteRel: string, sourcePath: string): Promise<AssetImport> =>
-  invoke<AssetImport>("assets_import", { noteRel, sourcePath });
+  invokeOrThrow<AssetImport>("assets_import", { noteRel, sourcePath });
 
 /** 工具栏选图：base64 字节写入 `笔记名/assets/`，返回相对引用。 */
 export const assetsImportBase64 = (
   noteRel: string,
   filename: string,
   data: string,
-): Promise<AssetImport> => invoke<AssetImport>("assets_import_base64", { noteRel, filename, data });
+): Promise<AssetImport> => invokeOrThrow<AssetImport>("assets_import_base64", { noteRel, filename, data });
 
 /** 返回笔记绝对路径（供 convertFileSrc 渲染 assets/ 图片）。 */
-export const noteAbsPath = (rel: string): Promise<string> => invoke<string>("note_abs_path", { rel });
+export const noteAbsPath = (rel: string): Promise<string> => invokeOrThrow<string>("note_abs_path", { rel });
 
 /** 导出 convertFileSrc，供预览图片路径重写。 */
 export { convertFileSrc };
@@ -45,6 +86,6 @@ export function onNotesChanged(cb: () => void): Promise<UnlistenFn> {
 // --- M4：窗口控制（Rust 端执行，避免给浮窗授予逐窗口 JS 权限） ---
 
 /** 显示并聚焦主窗口（同时隐藏快速记录浮窗）。 */
-export const openMainWindow = (): Promise<void> => invoke<void>("open_main_window");
+export const openMainWindow = (): Promise<void> => invokeOrThrow<void>("open_main_window");
 /** 隐藏快速记录浮窗。 */
-export const hideQuicknote = (): Promise<void> => invoke<void>("hide_quicknote");
+export const hideQuicknote = (): Promise<void> => invokeOrThrow<void>("hide_quicknote");

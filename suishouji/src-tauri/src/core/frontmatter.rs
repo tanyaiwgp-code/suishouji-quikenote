@@ -94,7 +94,7 @@ fn parse_tags(s: &str) -> Vec<String> {
         .strip_prefix('[')
         .and_then(|s| s.strip_suffix(']'))
         .unwrap_or(s);
-    s.split(|c| c == ',' || c == '，')
+    s.split([',', '，'])
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .map(str::to_string)

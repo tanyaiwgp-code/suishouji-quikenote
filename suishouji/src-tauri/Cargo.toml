@@ -17,6 +17,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# 门禁：cargo clippy -- -D warnings 即把 clippy::all 的 warn 提升为 error（CI 与 pre-commit 强制零警告）
+[lints.clippy]
+all = "warn"
+
 [dependencies]
 # M4：tray-icon 启用系统托盘（feature 门控）；image-png/ico 供 default_window_icon 解码
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png", "image-ico"] }
@@ -32,4 +36,8 @@ encoding_rs = "0.8"
 chardetng = "0.1"
 notify = "6"
 base64 = "0.22"
+# ts-rs：从 Rust 模型生成 TS 类型（types.gen.ts），消除前后端手写镜像漂移。
+# 需普通依赖（非 dev），因 #[derive(TS)] 在 lib 源码内展开需 trait 可见。
+# default feature 含 serde-compat（读取 #[serde(rename_all)]）。release 构建中运行时代码会被消除。
+ts-rs = "12"
 

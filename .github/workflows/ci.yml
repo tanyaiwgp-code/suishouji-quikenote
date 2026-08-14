@@ -1,0 +1,45 @@
+# CI 门禁（预留）：当前 git 无远程仓库，推送到 GitHub 后自动生效。
+# windows-latest 贴合目标平台（WebView2/托盘/全局快捷键），免 Linux webkit 系统依赖。
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  frontend:
+    name: 前端（tsc + eslint + vitest + build）
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: suishouji
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: suishouji/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+  rust:
+    name: Rust（test + clippy + 类型生成同步校验）
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: suishouji/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: suishouji/src-tauri
+      - run: cargo test --lib
+      # cargo test 会重写 types.gen.ts；若与入库不一致（改了 Rust 模型未重新生成提交）→ 红
+      - run: git diff --exit-code -- ../src/lib/types.gen.ts
+      - run: cargo clippy --all-targets -- -D warnings

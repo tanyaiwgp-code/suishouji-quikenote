@@ -22,6 +22,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   acquireNoteLock,
+  ApiError,
   assetsImport,
   assetsImportBase64,
   convertFileSrc,
@@ -83,6 +84,8 @@ function baseName(p: string): string {
 }
 
 function errText(err: unknown): string {
+  // ApiError 直接取 message（中文文案，无 "Error: " 前缀）；其余按字符串降级。
+  if (err instanceof ApiError) return err.message;
   return String(err).replace(/^Error:\s*/, "");
 }
 
