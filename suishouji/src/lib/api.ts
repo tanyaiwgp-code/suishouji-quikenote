@@ -54,6 +54,9 @@ export const readNote = (rel: string): Promise<string> => invokeOrThrow<string>(
 export const writeNote = (rel: string, content: string): Promise<void> =>
   invokeOrThrow<void>("write_note", { rel, content });
 export const deleteNote = (rel: string): Promise<void> => invokeOrThrow<void>("delete_note", { rel });
+/** M9：设置笔记 frontmatter 标题（后端改文件并广播刷新）。 */
+export const setNoteTitle = (rel: string, title: string): Promise<void> =>
+  invokeOrThrow<void>("set_note_title", { rel, title });
 export const acquireNoteLock = (rel: string): Promise<void> =>
   invokeOrThrow<void>("acquire_note_lock", { rel });
 export const releaseNoteLock = (rel: string): Promise<void> =>

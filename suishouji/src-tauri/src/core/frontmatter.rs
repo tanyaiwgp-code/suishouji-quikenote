@@ -46,6 +46,43 @@ pub fn parse(content: &str) -> Frontmatter {
     fm
 }
 
+/// 设置/替换 frontmatter 中的 title（保留其它键与正文；无 frontmatter 时在开头插入）。
+/// 文本级处理：在原 frontmatter 块内原位替换 `title:` 行（找不到则插入第 2 行），
+/// 避免用结构重建丢失未知键（`created:` 等）或打乱行序。
+pub fn set_title(content: &str, new_title: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let has_frontmatter = lines.first().map(|l| l.trim_end() == "---").unwrap_or(false);
+    if has_frontmatter {
+        // 从第 2 行起找闭合 `---`
+        if let Some(close_off) = lines[1..].iter().position(|l| l.trim_end() == "---") {
+            let close = close_off + 1; // 闭合行索引
+            let mut replaced = false;
+            let mut out: Vec<String> = Vec::with_capacity(lines.len());
+            for (i, line) in lines.iter().enumerate() {
+                if !replaced && i >= 1 && i < close {
+                    let key = line.trim().replace('：', ":");
+                    if key
+                        .split_once(':')
+                        .map(|(k, _)| k.trim() == "title")
+                        .unwrap_or(false)
+                    {
+                        out.push(format!("title: {new_title}"));
+                        replaced = true;
+                        continue;
+                    }
+                }
+                out.push((*line).to_string());
+            }
+            if !replaced {
+                out.insert(1, format!("title: {new_title}"));
+            }
+            return out.join("\n");
+        }
+    }
+    // 无 frontmatter（或未闭合）：在开头插入块
+    format!("---\ntitle: {new_title}\n---\n{}", content.trim_end())
+}
+
 struct Block<'a> {
     lines: Vec<&'a str>,
     body: String,
@@ -167,5 +204,29 @@ mod tests {
         let fm = parse("---\n---\n内容");
         assert_eq!(fm.title, None);
         assert_eq!(fm.body, "内容");
+    }
+
+    #[test]
+    fn set_title_replaces_existing_keeps_others() {
+        let content = "---\ntitle: 旧标题\ncreated: 2026-08-13\npinned: true\n---\n正文第一行";
+        let updated = set_title(content, "新标题");
+        assert!(updated.starts_with("---\n"));
+        assert!(updated.contains("title: 新标题"));
+        assert!(!updated.contains("旧标题"));
+        assert!(updated.contains("created: 2026-08-13"), "未知键保留");
+        assert!(updated.contains("pinned: true"));
+        assert!(updated.contains("正文第一行"));
+    }
+
+    #[test]
+    fn set_title_inserts_when_no_frontmatter() {
+        let updated = set_title("直接开写\n第二行", "新标题");
+        assert_eq!(updated, "---\ntitle: 新标题\n---\n直接开写\n第二行");
+    }
+
+    #[test]
+    fn set_title_inserts_into_empty_frontmatter() {
+        let updated = set_title("---\n---\n内容", "标题");
+        assert!(updated.starts_with("---\ntitle: 标题\n---\n内容"));
     }
 }

@@ -23,6 +23,7 @@ fn main() {
                 "get_app_settings",
                 "set_app_root",
                 "set_autostart",
+                "set_note_title",
             ]),
         ),
     )

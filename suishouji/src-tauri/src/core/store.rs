@@ -201,6 +201,13 @@ impl FsStore {
         Ok(())
     }
 
+    /// M9：设置笔记 frontmatter 标题（读 → 文本级改 title 行 → 原子写回）。
+    pub fn set_note_title(&self, rel: &str, title: &str) -> Result<(), Error> {
+        let content = self.read_note(rel)?;
+        let updated = frontmatter::set_title(&content, title);
+        self.write_note(rel, &updated)
+    }
+
     /// 删除笔记文件；若该笔记独享 `assets/` 目录（无同 stem 兄弟笔记共享），一并清理（B4）。
     pub fn delete_note(&self, rel: &str) -> Result<(), Error> {
         let path = self.guard.resolve(rel)?;
@@ -636,6 +643,35 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
             .count();
         assert_eq!(tmps, 0, "失败后 tmp 不残留");
+        cleanup(&root);
+    }
+
+    #[test]
+    fn set_note_title_updates_frontmatter_keeps_others() {
+        let root = temp_root("set_title");
+        let store = FsStore::new(root.clone()).unwrap();
+        store
+            .write_note("a.md", "---\ntitle: 旧\ncreated: x\n---\n正文")
+            .unwrap();
+        store.set_note_title("a.md", "新").unwrap();
+        let content = store.read_note("a.md").unwrap();
+        assert!(content.contains("title: 新"));
+        assert!(!content.contains("旧"));
+        assert!(content.contains("created: x"), "未知键保留");
+        assert!(content.contains("正文"));
+        cleanup(&root);
+    }
+
+    #[test]
+    fn set_note_title_inserts_frontmatter_when_none() {
+        let root = temp_root("set_title_none");
+        let store = FsStore::new(root.clone()).unwrap();
+        store.write_note("b.txt", "纯文本内容").unwrap();
+        store.set_note_title("b.txt", "标题").unwrap();
+        assert_eq!(
+            store.read_note("b.txt").unwrap(),
+            "---\ntitle: 标题\n---\n纯文本内容"
+        );
         cleanup(&root);
     }
 

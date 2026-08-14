@@ -69,6 +69,7 @@ pub fn run() {
             commands::get_app_settings,
             commands::set_app_root,
             commands::set_autostart,
+            commands::set_note_title,
         ])
         .setup(|app| {
             // M6：读设置决定根目录（settings.json → 默认），FsStore 在 setup 内 manage（改根重启生效）

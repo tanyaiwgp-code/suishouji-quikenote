@@ -29,10 +29,18 @@ export default defineConfig(async () => ({
             "@tauri-apps/plugin-dialog": fileURLToPath(
               new URL("./e2e/mocks/tauri-dialog.ts", import.meta.url),
             ),
+            // M9：事件监听 mock，让 set_note_title 等命令的 emit 能驱动前端刷新
+            "@tauri-apps/api/event": fileURLToPath(
+              new URL("./e2e/mocks/tauri-event.ts", import.meta.url),
+            ),
           },
         },
         optimizeDeps: {
-          exclude: ["@tauri-apps/api/core", "@tauri-apps/plugin-dialog"],
+          exclude: [
+            "@tauri-apps/api/core",
+            "@tauri-apps/api/event",
+            "@tauri-apps/plugin-dialog",
+          ],
         },
       }
     : {}),

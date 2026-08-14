@@ -26,6 +26,19 @@ pub fn write_note(store: State<FsStore>, rel: String, content: String) -> Result
     store.write_note(&rel, &content).map_err(CommandError::from)
 }
 
+/// M9：设置笔记 frontmatter 标题（改文件后广播刷新列表/编辑器标题）。
+#[tauri::command]
+pub fn set_note_title(
+    store: State<FsStore>,
+    app: AppHandle,
+    rel: String,
+    title: String,
+) -> Result<(), CommandError> {
+    store.set_note_title(&rel, &title).map_err(CommandError::from)?;
+    let _ = app.emit("notes://changed", ());
+    Ok(())
+}
+
 #[tauri::command]
 pub fn delete_note(store: State<FsStore>, rel: String) -> Result<(), CommandError> {
     store.delete_note(&rel).map_err(CommandError::from)

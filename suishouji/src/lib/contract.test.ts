@@ -86,6 +86,7 @@ describe("命令名 4 清单契约", () => {
       "release_note_lock",
       "set_app_root",
       "set_autostart",
+      "set_note_title",
       "write_note",
     ]);
   });

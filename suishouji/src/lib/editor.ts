@@ -33,6 +33,7 @@ import {
   noteAbsPath,
   readNote,
   releaseNoteLock,
+  setNoteTitle,
   writeNote,
 } from "./api";
 import type { NoteMeta } from "../types";
@@ -153,6 +154,10 @@ class Editor implements EditorInstance {
   // 确保「先释放旧锁、再获取新锁」有序落地，避免占位/重开后假锁冲突。
   private lockChain: Promise<void> = Promise.resolve();
   private lockedRel: string | null = null;
+
+  // M9：标题栏可编辑 —— 当前显示标题 + 是否处于编辑态（防 blur 递归提交）
+  private currentTitle = "";
+  private titleEditing = false;
 
   private onDocClickBound: (e: MouseEvent) => void;
   private onKeyBound: (e: KeyboardEvent) => void;
@@ -445,6 +450,78 @@ class Editor implements EditorInstance {
     this.container?.addEventListener("drop", (e) => {
       if (hasFiles(e)) e.preventDefault();
     });
+    // M9：标题栏可编辑（点击进入，Enter/失焦保存，Esc 取消）
+    const titleEl = this.container?.querySelector<HTMLElement>("#ed-title");
+    titleEl?.addEventListener("click", () => this.startTitleEdit());
+    titleEl?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void this.commitTitle();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        this.cancelTitleEdit();
+      }
+    });
+    titleEl?.addEventListener("blur", () => {
+      void this.commitTitle();
+    });
+  }
+
+  // ---- M9：标题栏可编辑 ----
+
+  private startTitleEdit(): void {
+    const titleEl = this.container?.querySelector<HTMLElement>("#ed-title");
+    const n = this.open;
+    if (!titleEl || !n || n.readOnly || this.titleEditing) return;
+    this.titleEditing = true;
+    titleEl.contentEditable = "true";
+    titleEl.classList.add("editing");
+    titleEl.focus();
+    // 全选便于直接替换整标题
+    const range = document.createRange();
+    range.selectNodeContents(titleEl);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  private exitTitleEdit(): void {
+    this.titleEditing = false;
+    const titleEl = this.container?.querySelector<HTMLElement>("#ed-title");
+    if (titleEl) {
+      titleEl.contentEditable = "false";
+      titleEl.classList.remove("editing");
+    }
+  }
+
+  /** 保存标题：先落正文（flushSave，dirty 清空后 onExternalChange 重载才安全），
+   *  再 setNoteTitle → 后端 emit notes://changed → loadNotes 刷新列表标题 + 重载编辑器。 */
+  private async commitTitle(): Promise<void> {
+    if (!this.titleEditing) return;
+    const titleEl = this.container?.querySelector<HTMLElement>("#ed-title");
+    const n = this.open;
+    if (!titleEl || !n || n.readOnly) {
+      this.exitTitleEdit();
+      return;
+    }
+    const newTitle = titleEl.textContent?.trim() ?? "";
+    this.exitTitleEdit();
+    if (newTitle === this.currentTitle) return;
+    try {
+      await this.flushSave(); // 正文落盘，避免改标题文件写入与正文保存竞争
+      await setNoteTitle(n.rel, newTitle);
+      this.currentTitle = newTitle;
+    } catch (err) {
+      this.setSave(errText(err), "error");
+    }
+  }
+
+  private cancelTitleEdit(): void {
+    const titleEl = this.container?.querySelector<HTMLElement>("#ed-title");
+    if (titleEl) {
+      titleEl.textContent = this.currentTitle.trim() ? this.currentTitle : "（无标题）";
+    }
+    this.exitTitleEdit();
   }
 
   private onToolbarClick(e: MouseEvent): void {
@@ -673,6 +750,7 @@ class Editor implements EditorInstance {
 
     const titleEl = this.container?.querySelector<HTMLElement>("#ed-title");
     if (titleEl) titleEl.textContent = note.title.trim() ? note.title : "（无标题）";
+    this.currentTitle = note.title;
     const badgeEl = this.container?.querySelector<HTMLElement>("#ed-badge");
     if (badgeEl) {
       badgeEl.textContent = note.format.toUpperCase();

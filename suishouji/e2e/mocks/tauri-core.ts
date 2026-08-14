@@ -3,12 +3,15 @@
 // 注：不注入 window.__TAURI_INTERNALS__，故 isTauri() 返回 false —— 窗口/拖拽/事件等
 // 原生特性在 main.ts/quicknote.ts/editor.ts 里按 isTauri 分支自动跳过。
 import type { AppSettings, NoteMeta } from "../../src/lib/types.gen";
+import { emit } from "./tauri-event";
 
 interface MockNote {
   rel: string;
   content: string;
   mtime: number;
   pinned: boolean;
+  /** M9：set_note_title 覆盖的标题（优先于内容推导） */
+  title?: string;
 }
 
 let counter = 1;
@@ -30,7 +33,7 @@ if (typeof window !== "undefined") {
 function buildMeta(m: MockNote): NoteMeta {
   const format = m.rel.toLowerCase().endsWith(".md") ? "md" : "txt";
   const firstLine = m.content.split("\n")[0] ?? "";
-  const title = firstLine.replace(/^#\s*/, "").trim() || (m.rel.split("/").pop() ?? m.rel);
+  const title = m.title ?? (firstLine.replace(/^#\s*/, "").trim() || (m.rel.split("/").pop() ?? m.rel));
   return {
     id: `mock-${m.rel}`,
     title,
@@ -81,6 +84,15 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "delete_note":
       byPath.delete(args.rel as string);
       return undefined as T;
+    case "set_note_title": {
+      const rel = args.rel as string;
+      const m = byPath.get(rel);
+      if (!m) throw new Error(`not_found: ${rel}`);
+      m.title = args.title as string;
+      m.mtime = counter++ * 1000; // 更新 mtime → 列表重排
+      emit("notes://changed"); // 触发前端 onNotesChanged → loadNotes 刷新（与真实后端一致）
+      return undefined as T;
+    }
     case "acquire_note_lock":
     case "release_note_lock":
       return undefined as T;

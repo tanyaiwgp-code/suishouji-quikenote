@@ -130,7 +130,7 @@ mod tests {
         let root = temp_root("normal");
         let guard = PathGuard::new(root.clone()).unwrap();
         let resolved = guard.resolve("sub/a.md").unwrap();
-        assert!(resolved.starts_with(&root));
+        assert!(resolved.starts_with(guard.root()));
         assert!(resolved.ends_with("a.md"));
         std::fs::remove_dir_all(&root).ok();
     }
@@ -181,7 +181,7 @@ mod tests {
         std::fs::create_dir_all(root.join("sub")).unwrap();
         let guard = PathGuard::new(root.clone()).unwrap();
         let resolved = guard.resolve("sub/new.md").unwrap();
-        assert!(resolved.starts_with(&root));
+        assert!(resolved.starts_with(guard.root()));
         assert!(resolved.ends_with("sub/new.md"));
         std::fs::remove_dir_all(&root).ok();
     }

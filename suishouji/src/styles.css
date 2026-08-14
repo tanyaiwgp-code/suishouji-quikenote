@@ -577,6 +577,13 @@ kbd {
   font-size: var(--fs-title);
   font-weight: var(--fw-semibold);
   color: var(--ink);
+  /* M9：标题可点击编辑（只读笔记不触发，见 editor.ts startTitleEdit） */
+  cursor: text;
+}
+.editor-title.editing {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
 }
 .editor-meta {
   margin-top: var(--space-1);

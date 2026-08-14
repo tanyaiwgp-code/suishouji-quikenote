@@ -21,6 +21,7 @@
     "allow-get-app-settings",
     "allow-set-app-root",
     "allow-set-autostart",
+    "allow-set-note-title",
     "dialog:default"
   ]
 }
