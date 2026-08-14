@@ -26,7 +26,7 @@ export function renderShell(): void {
         </div>
         <div class="topbar-actions">
           <button class="btn-icon" id="theme-toggle" title="切换主题" aria-label="切换主题">◐</button>
-          <button class="btn-icon" id="settings-btn" title="设置（M6）" aria-label="设置" disabled>⚙</button>
+          <button class="btn-icon" id="settings-btn" title="设置" aria-label="设置" aria-haspopup="dialog">⚙</button>
         </div>
       </header>
       <div class="workspace">
@@ -36,7 +36,7 @@ export function renderShell(): void {
           <button class="nav-item" title="标签（后续版本）" aria-label="标签" disabled>#</button>
           <span class="nav-grow"></span>
           <span class="new-menu-wrap">
-            <button class="nav-item accent" id="new-note" title="新建笔记" aria-label="新建笔记" aria-haspopup="menu">＋</button>
+            <button class="nav-item accent" id="new-note" title="新建笔记" aria-label="新建笔记" aria-haspopup="menu" aria-expanded="false" aria-controls="new-menu">＋</button>
             <div class="new-menu" id="new-menu" role="menu" hidden>
               <button type="button" role="menuitem" data-ext="md">新建 Markdown</button>
               <button type="button" role="menuitem" data-ext="txt">新建纯文本</button>
@@ -53,6 +53,43 @@ export function renderShell(): void {
         <main class="col-editor" id="editor" aria-label="编辑器"></main>
       </div>
     </div>
+    <div class="modal-backdrop" id="settings-backdrop" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-label="设置">
+        <header class="modal-header">
+          <h2 class="modal-title">设置</h2>
+          <button class="btn-icon" id="settings-close" title="关闭" aria-label="关闭设置">×</button>
+        </header>
+        <div class="modal-body">
+          <div class="setting-row">
+            <span class="setting-label">数据目录</span>
+            <div class="setting-control">
+              <span id="set-root" class="setting-value" title="当前数据根目录">…</span>
+              <button id="set-root-pick" class="btn-secondary">选择…</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <label class="setting-label" for="set-theme">主题</label>
+            <select id="set-theme" class="setting-select">
+              <option value="system">跟随系统</option>
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label class="setting-label" for="set-autostart">开机自启</label>
+            <input type="checkbox" id="set-autostart" class="setting-checkbox" />
+          </div>
+          <div class="setting-row">
+            <label class="setting-label" for="set-font">字号</label>
+            <select id="set-font" class="setting-select">
+              <option value="small">小</option>
+              <option value="standard">标准</option>
+              <option value="large">大</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -60,6 +97,17 @@ export function renderShell(): void {
 export function renderAll(): void {
   renderList();
   renderEditor();
+}
+
+/** M6：列表加载骨架屏（灰占位卡片，消除首次加载白屏期）。 */
+export function renderSkeleton(count = 6): void {
+  const list = document.getElementById("note-list");
+  if (!list) return;
+  list.innerHTML = Array.from(
+    { length: count },
+    () =>
+      `<li class="skeleton-card" aria-hidden="true"><span class="sk sk-title"></span><span class="sk sk-preview"></span><span class="sk sk-meta"></span></li>`,
+  ).join("");
 }
 
 function filteredNotes(): NoteMeta[] {
@@ -99,7 +147,7 @@ function cardHtml(n: NoteMeta, selected: boolean): string {
   const preview = n.preview.trim() ? n.preview : "空笔记";
   const tags = n.tags.length ? `<span class="card-tags">#${escapeHtml(n.tags.join(" #"))}</span>` : "";
   return `
-    <li class="note-card${selected ? " selected" : ""}" data-path="${escapeAttr(n.path)}">
+    <li class="note-card${selected ? " selected" : ""}" data-path="${escapeAttr(n.path)}" tabindex="0" role="button" aria-label="${escapeAttr(n.title || "无标题")}">
       <div class="card-top">
         <span class="card-title">${escapeHtml(title)}</span>
         <span class="badge badge-${n.format}">${n.format.toUpperCase()}</span>

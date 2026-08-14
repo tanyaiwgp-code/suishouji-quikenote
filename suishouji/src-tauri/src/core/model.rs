@@ -47,12 +47,22 @@ pub struct AssetImport {
     pub count: u32,
 }
 
+/// M6：设置页返回给前端的应用设置（root + autostart）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export_to = "types.gen.ts")]
+pub struct AppSettings {
+    /// 当前数据根目录（绝对路径）。
+    pub root: String,
+    /// 开机自启是否开启（运行时读注册表，不入 settings.json）。
+    pub autostart: bool,
+}
+
 #[cfg(test)]
 mod ts_export {
     use super::*;
 
     /// 生成 `suishouji/src/lib/types.gen.ts`（相对 CARGO_MANIFEST_DIR=src-tauri 的 `../src/lib`）。
-    /// `NoteMeta::export_all` 会递归导出依赖 `NoteFormat`；`AssetImport` 独立导出。
+    /// `NoteMeta::export_all` 会递归导出依赖 `NoteFormat`；`AssetImport`/`AppSettings` 独立导出。
     /// 运行 `cargo test` 即重写前端类型文件（入库）。
     #[test]
     fn export_typescript_bindings() {
@@ -60,6 +70,7 @@ mod ts_export {
         let cfg = ts_rs::Config::new().with_out_dir(&out);
         NoteMeta::export_all(&cfg).expect("导出 NoteMeta 到 types.gen.ts");
         AssetImport::export_all(&cfg).expect("导出 AssetImport 到 types.gen.ts");
+        AppSettings::export_all(&cfg).expect("导出 AppSettings 到 types.gen.ts");
     }
 }
 

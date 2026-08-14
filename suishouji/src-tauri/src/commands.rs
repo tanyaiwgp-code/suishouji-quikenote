@@ -4,9 +4,12 @@
 use base64::Engine as _;
 use crate::core::docx;
 use crate::core::error::{CommandError, Error};
-use crate::core::model::{AssetImport, NoteMeta};
+use crate::core::model::{AppSettings, AssetImport, NoteMeta};
+use crate::core::settings;
 use crate::core::store::FsStore;
+use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_autostart::ManagerExt;
 
 #[tauri::command]
 pub fn list_notes(store: State<FsStore>) -> Result<Vec<NoteMeta>, CommandError> {
@@ -184,4 +187,51 @@ pub fn hide_quicknote(app: AppHandle) -> Result<(), CommandError> {
     }
     let _ = app.emit("notes://changed", ());
     Ok(())
+}
+
+// --- M6：应用设置 ---
+
+/// M6：读取应用设置（数据根目录 + 开机自启状态）。
+#[tauri::command]
+pub fn get_app_settings(
+    store: State<FsStore>,
+    app: AppHandle,
+) -> Result<AppSettings, CommandError> {
+    let root = store.root().to_string_lossy().into_owned();
+    let autostart = app.autolaunch().is_enabled().unwrap_or(false);
+    Ok(AppSettings { root, autostart })
+}
+
+/// M6：设置数据根目录（写 settings.json，重启后生效）。
+#[tauri::command]
+pub fn set_app_root(app: AppHandle, root: String) -> Result<(), CommandError> {
+    let path = PathBuf::from(&root);
+    if !path.is_dir() {
+        return Err(CommandError::from(Error::InvalidPath(root)));
+    }
+    let cfg_dir = app_config_dir(&app);
+    let mut file = settings::read(&cfg_dir).map_err(CommandError::from)?;
+    file.root = Some(root);
+    settings::write(&cfg_dir, &file).map_err(CommandError::from)?;
+    Ok(())
+}
+
+/// M6：开关开机自启（写注册表 `HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`，值名 `suishouji`）。
+/// 注：托盘菜单的勾选是内存态，设置页改后托盘勾选下次启动同步。
+#[tauri::command]
+pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), CommandError> {
+    let res = if enabled {
+        app.autolaunch().enable()
+    } else {
+        app.autolaunch().disable()
+    };
+    res.map_err(|e| CommandError::new("autostart_failed", format!("开机自启设置失败：{e}")))?;
+    Ok(())
+}
+
+/// 应用配置目录（`%APPDATA%\com.suishouji.app`，与 window-state 插件同目录）；取不到时降级系统临时目录。
+fn app_config_dir(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_config_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
 }

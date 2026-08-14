@@ -6,6 +6,7 @@
 mod commands;
 mod core;
 
+use core::settings;
 use core::store::FsStore;
 use core::watcher;
 use std::path::PathBuf;
@@ -33,7 +34,6 @@ pub fn run() {
         })
         .build();
 
-    let store = FsStore::new(default_root()).expect("无法初始化笔记根目录");
     tauri::Builder::default()
         // M4-3：单实例：二次启动聚焦既有主窗口（官方要求第一个注册）
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -52,7 +52,6 @@ pub fn run() {
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
                 .build(),
         )
-        .manage(store)
         .invoke_handler(tauri::generate_handler![
             commands::list_notes,
             commands::read_note,
@@ -67,8 +66,20 @@ pub fn run() {
             commands::hide_quicknote,
             commands::docx_import,
             commands::docx_export,
+            commands::get_app_settings,
+            commands::set_app_root,
+            commands::set_autostart,
         ])
         .setup(|app| {
+            // M6：读设置决定根目录（settings.json → 默认），FsStore 在 setup 内 manage（改根重启生效）
+            let cfg_dir = app.path().app_config_dir().unwrap_or_default();
+            let root = settings::read(&cfg_dir)
+                .ok()
+                .and_then(|s| s.root)
+                .map(PathBuf::from)
+                .unwrap_or_else(default_root);
+            app.manage(FsStore::new(root).expect("无法初始化笔记根目录"));
+
             // M2-4：监听笔记根目录，外部修改 → 通知前端刷新列表
             let root = app.state::<FsStore>().root().to_path_buf();
             // B7：应用自身写入（自动保存/图片导入）不触发全量刷新，

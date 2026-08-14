@@ -154,6 +154,7 @@ class Editor implements EditorInstance {
   private lockedRel: string | null = null;
 
   private onDocClickBound: (e: MouseEvent) => void;
+  private onKeyBound: (e: KeyboardEvent) => void;
 
   constructor(target: HTMLElement, opts: EditorOptions = {}) {
     this.host = target;
@@ -184,6 +185,11 @@ class Editor implements EditorInstance {
       }
     };
     document.addEventListener("click", this.onDocClickBound);
+    // M6：Esc 关闭标题菜单（键盘可达性）；destroy 时移除
+    this.onKeyBound = (e) => {
+      if (e.key === "Escape") this.closeHeadingMenu();
+    };
+    document.addEventListener("keydown", this.onKeyBound);
   }
 
   // ============================================================
@@ -240,11 +246,11 @@ class Editor implements EditorInstance {
             <button class="tbtn" data-cmd="bold" title="粗体" aria-label="粗体">B</button>
             <button class="tbtn" data-cmd="italic" title="斜体" aria-label="斜体">I</button>
             <span class="tbtn-wrap">
-              <button class="tbtn" data-cmd="heading" title="标题" aria-label="标题" aria-haspopup="true">H</button>
-              <div class="heading-menu" id="heading-menu" hidden>
-                <button data-h="1">H1 大标题</button>
-                <button data-h="2">H2 中标题</button>
-                <button data-h="3">H3 小标题</button>
+              <button class="tbtn" data-cmd="heading" title="标题" aria-label="标题" aria-haspopup="true" aria-expanded="false">H</button>
+              <div class="heading-menu" id="heading-menu" role="menu" aria-label="标题层级" hidden>
+                <button data-h="1" role="menuitem">H1 大标题</button>
+                <button data-h="2" role="menuitem">H2 中标题</button>
+                <button data-h="3" role="menuitem">H3 小标题</button>
               </div>
             </span>
             <button class="tbtn" data-cmd="code" title="代码块" aria-label="代码块">⟨/⟩</button>
@@ -255,9 +261,9 @@ class Editor implements EditorInstance {
             <button class="tbtn" data-cmd="export-docx" title="导出为 Word (DOCX)" aria-label="导出为 Word">⇓</button>
             <span class="toolbar-grow"></span>
             ${o.modeButtons ? `
-            <button class="tbtn mode-btn${this.mode === "edit" ? " active" : ""}" data-mode="edit">编辑</button>
-            <button class="tbtn mode-btn${this.mode === "split" ? " active" : ""}" data-mode="split">双栏</button>
-            <button class="tbtn mode-btn${this.mode === "preview" ? " active" : ""}" data-mode="preview">预览</button>` : ""}
+            <button class="tbtn mode-btn${this.mode === "edit" ? " active" : ""}" data-mode="edit" aria-pressed="${this.mode === "edit"}">编辑</button>
+            <button class="tbtn mode-btn${this.mode === "split" ? " active" : ""}" data-mode="split" aria-pressed="${this.mode === "split"}">双栏</button>
+            <button class="tbtn mode-btn${this.mode === "preview" ? " active" : ""}" data-mode="preview" aria-pressed="${this.mode === "preview"}">预览</button>` : ""}
           </div>
         </header>
         <div class="editor-body ${this.mode === "split" ? "split" : this.mode === "preview" ? "preview" : "edit"}" id="ed-body">
@@ -454,6 +460,7 @@ class Editor implements EditorInstance {
       if (menu) {
         const willOpen = menu.hidden;
         menu.hidden = !willOpen;
+        btn.setAttribute("aria-expanded", String(willOpen));
         if (willOpen) {
           const rect = btn.getBoundingClientRect();
           menu.style.top = `${rect.bottom + 4}px`;
@@ -480,6 +487,8 @@ class Editor implements EditorInstance {
   private closeHeadingMenu(): void {
     const menu = this.container?.querySelector<HTMLElement>("#heading-menu");
     if (menu) menu.hidden = true;
+    const btn = this.container?.querySelector<HTMLElement>("[data-cmd='heading']");
+    btn?.setAttribute("aria-expanded", "false");
   }
 
   private setMode(next: ViewMode): void {
@@ -492,6 +501,7 @@ class Editor implements EditorInstance {
     }
     this.container?.querySelectorAll<HTMLElement>(".mode-btn").forEach((b) => {
       b.classList.toggle("active", b.dataset.mode === next);
+      b.setAttribute("aria-pressed", String(b.dataset.mode === next));
     });
     if (next !== "edit") this.renderPreview();
   }
@@ -723,7 +733,7 @@ class Editor implements EditorInstance {
               color: "var(--ink)",
               backgroundColor: "var(--bg)",
             },
-            "&.cm-focused": { outline: "none" },
+            "&.cm-focused": { outline: "2px solid var(--accent)", outlineOffset: "-1px" }, // M6：键盘/点击聚焦可见焦点环
             ".cm-scroller": { fontFamily: "var(--font-zh)", lineHeight: "var(--lh-body)", overflow: "auto" },
             ".cm-content": { padding: "var(--space-4) var(--space-5)", caretColor: "var(--accent)" },
             ".cm-line": { padding: "0 2px" },
@@ -874,6 +884,7 @@ class Editor implements EditorInstance {
     clearTimeout(this.saveTimer);
     clearTimeout(this.previewTimer);
     document.removeEventListener("click", this.onDocClickBound);
+    document.removeEventListener("keydown", this.onKeyBound);
     this.destroyEditor();
     this.loadToken++; // 使进行中的 loadNote 失效，避免写回已销毁容器
     if (this.container) this.container.innerHTML = "";

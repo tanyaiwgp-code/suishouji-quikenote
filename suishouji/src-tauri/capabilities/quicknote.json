@@ -19,6 +19,9 @@
     "allow-hide-quicknote",
     "allow-docx-import",
     "allow-docx-export",
+    "allow-get-app-settings",
+    "allow-set-app-root",
+    "allow-set-autostart",
     "dialog:default"
   ]
 }

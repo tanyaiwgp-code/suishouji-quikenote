@@ -20,6 +20,9 @@ fn main() {
                 "hide_quicknote",
                 "docx_import",
                 "docx_export",
+                "get_app_settings",
+                "set_app_root",
+                "set_autostart",
             ]),
         ),
     )

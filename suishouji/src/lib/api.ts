@@ -2,7 +2,7 @@
 // 由 contract.test.ts 契约测试锁定）。
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { NoteMeta, AssetImport } from "../types";
+import type { NoteMeta, AssetImport, AppSettings } from "../types";
 
 // --- 结构化错误 ---
 // Rust 端 CommandError 序列化为 { code, message }（见 src-tauri/src/core/error.rs）。
@@ -84,6 +84,17 @@ export const docxImport = (sourcePath: string, targetRel: string): Promise<strin
 /** 导出当前 MD 笔记为 DOCX（写入用户选择的保存路径）。 */
 export const docxExport = (rel: string, targetPath: string): Promise<void> =>
   invokeOrThrow<void>("docx_export", { rel, targetPath });
+
+// --- M6：应用设置 ---
+
+/** 读取应用设置（数据根目录 + 开机自启状态）。 */
+export const getAppSettings = (): Promise<AppSettings> =>
+  invokeOrThrow<AppSettings>("get_app_settings");
+/** 设置数据根目录（写 settings.json，重启后生效）。 */
+export const setAppRoot = (root: string): Promise<void> => invokeOrThrow<void>("set_app_root", { root });
+/** 开关开机自启。 */
+export const setAutostart = (enabled: boolean): Promise<void> =>
+  invokeOrThrow<void>("set_autostart", { enabled });
 
 /** 导出 convertFileSrc，供预览图片路径重写。 */
 export { convertFileSrc };

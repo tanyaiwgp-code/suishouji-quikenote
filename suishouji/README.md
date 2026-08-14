@@ -18,9 +18,11 @@
 | M4 浮窗托盘快捷键 | ✅ | 2026-08-14 |
 | M3.5 维护性基建 | ✅ | 2026-08-14 |
 | M5 格式链路 | ✅ | 2026-08-14 |
-| M6 打磨发布 | ⬜ 待开始 | — |
+| M6 打磨发布 | ✅ | 2026-08-14 |
 
 > **2026-08-14 · M5 格式链路**：① **TXT 直编** —— ＋按钮弹菜单「新建 Markdown / 新建纯文本」（命名逻辑抽成 `note-name.ts` 纯函数并测）；UTF-8 BOM 读取兼容；② **DOCX 导入 → MD** —— 新建 `core/docx.rs`（zip + roxmltree），标题/段落/表格/图片四类转 MD，图片入 assets；**安全验收**：防 ZIP 炸弹（解压总大小 ≤50MB/条目 ≤1000/单文件 ≤20MB）、防 XXE（roxmltree 禁 DTD/外部实体）、图片仅从 zip `media/` 提取（不发网络）；③ **MD 导出 → DOCX** —— 生成 Word 可打开的最小 OOXML 包（中文 UTF-8 不乱码）；④ **格式徽章** MD/TXT 已有（配色确认）；新增 2 命令（docx_import/docx_export，契约测试基线 11→13）+ `tauri-plugin-dialog` 系统对话框。Rust 单测 46 → **55**、前端 Vitest 25 → **30**，真实应用 CDP 冒烟验证 DOCX 往返 + TXT 识别。
+>
+> **2026-08-14 · M6 打磨发布**：① **设置页** —— `settings.json` 落 `app_config_dir()`（`%APPDATA%\com.suishouji.app\`，零新依赖），新增 `get_app_settings`/`set_app_root`/`set_autostart` 3 命令（契约基线 13→16）；主窗口内设置弹层：数据目录（dialog 选目录，重启生效）/主题三态（跟随系统/浅/深）/开机自启/字号三档（--fs-body）；`lib.rs` 重构 FsStore 创建到 setup 读配置；② **骨架屏** —— 首次加载灰占位卡片 + shimmer（reduced-motion 全局覆盖）；③ **可访问性** —— 修复 `input:focus{outline:none}` 覆盖焦点环、CodeMirror/qn-title 焦点环、`.note-card` tabindex+Enter/Space 键盘选择、新建/标题菜单键盘导航（Arrow/Esc/aria-expanded）、44px 点击区（nav/icon/toolbar/菜单）、补 `--radius-xs`、模式按钮 aria-pressed；④ **NSIS 打包** —— `targets:["nsis"]` + 中文简体/当前用户安装（免管理员）；`npm run tauri build` 出安装器。Rust 单测 55 → **59**、前端 Vitest 30 → **31**。
 >
 > **2026-08-14 · M3.5 代码审视与加固**：对 M0-M3 全量审视（安全/功能/性能），修复并验证 7 项：
 > **S1** 预览链接 scheme 白名单（防 `javascript:` 执行/整页导航）、**B1** 文件锁泄漏、**B2** 关窗落盘、
@@ -50,9 +52,9 @@
 ```bash
 npm run tauri dev     # 启动开发（前后端热重载，窗口 1280×800）
 npm run build         # 前端 tsc 类型检查 + vite 打包
-npm run check         # 前端门禁：tsc + eslint + vitest（30 项）
-npm run tauri build   # 打包安装器（M6 验证）
-cd src-tauri && cargo test --lib   # Rust 核心层单测（55 项；含 ts-rs 生成 types.gen.ts + docx 测试）
+npm run check         # 前端门禁：tsc + eslint + vitest（31 项）
+npm run tauri build   # 打包 NSIS 安装器（M6）
+cd src-tauri && cargo test --lib   # Rust 核心层单测（59 项；含 ts-rs 生成 types.gen.ts + docx/settings 测试）
 cd src-tauri && cargo clippy --all-targets -- -D warnings   # Rust 门禁（零警告）
 bash scripts/install-hooks.sh      # 首次 clone 后启用 git hooks（pre-commit 全量门禁）
 ```

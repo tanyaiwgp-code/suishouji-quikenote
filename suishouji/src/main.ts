@@ -5,14 +5,30 @@
 // ============================================================
 
 import "./styles.css";
-import { listNotes, onNotesChanged, writeNote } from "./lib/api";
+import {
+  ApiError,
+  getAppSettings,
+  listNotes,
+  onNotesChanged,
+  setAppRoot,
+  setAutostart,
+  writeNote,
+} from "./lib/api";
 import { createEditor, type EditorInstance } from "./lib/editor";
 import { index, mobileView, navView, notes, query, selectedPath, type NavView } from "./lib/store";
 import { buildNoteRel, inboxTimestampBase, type NoteExt } from "./lib/note-name";
-import { initTheme } from "./lib/theme";
-import { applyViewMode, renderAll, renderShell, setEditor, updateListTitle } from "./ui";
+import { applyFont, applyTheme, initTheme } from "./lib/theme";
+import {
+  applyViewMode,
+  renderAll,
+  renderSkeleton,
+  renderShell,
+  setEditor,
+  updateListTitle,
+} from "./ui";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { NoteMeta } from "./types";
 
 /** 与 Rust `list_notes` 一致的排序：置顶 → mtime 倒序 → 路径字典序（B7 本地重排用）。 */
@@ -22,6 +38,8 @@ function byMtime(a: NoteMeta, b: NoteMeta): number {
 
 // --- 数据加载 ---
 async function loadNotes(): Promise<void> {
+  // M6：列表为空（首次加载）时先渲染骨架屏，避免白屏；刷新时保留旧列表不闪
+  if (notes.get().length === 0) renderSkeleton();
   try {
     const data = await listNotes();
     notes.set(data);
@@ -97,21 +115,46 @@ function wireEvents(editor: EditorInstance): void {
     });
   });
 
-  // 新建：＋按钮弹出「新建 Markdown / 新建纯文本」菜单（M5）
+  // 新建：＋按钮弹出「新建 Markdown / 新建纯文本」菜单（M5），M6 补键盘导航与 aria
+  const newNoteBtn = document.getElementById("new-note");
   const newMenu = document.getElementById("new-menu") as HTMLElement | null;
-  document.getElementById("new-note")?.addEventListener("click", (e) => {
+  const closeNewMenu = (): void => {
+    if (newMenu) newMenu.hidden = true;
+    newNoteBtn?.setAttribute("aria-expanded", "false");
+  };
+  const toggleNewMenu = (): void => {
+    if (!newMenu) return;
+    const willOpen = newMenu.hidden;
+    newMenu.hidden = !willOpen;
+    newNoteBtn?.setAttribute("aria-expanded", String(willOpen));
+    if (willOpen) newMenu.querySelector<HTMLElement>("button")?.focus();
+  };
+  newNoteBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (newMenu) newMenu.hidden = !newMenu.hidden;
+    toggleNewMenu();
   });
   newMenu?.querySelectorAll("button[data-ext]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      newMenu.hidden = true;
+      closeNewMenu();
       void createNote((btn as HTMLElement).dataset.ext as NoteExt);
     });
   });
+  newMenu?.addEventListener("keydown", (e) => {
+    const items = Array.from(newMenu.querySelectorAll<HTMLElement>("button"));
+    const idx = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const dir = e.key === "ArrowDown" ? 1 : -1;
+      items[(idx + dir + items.length) % items.length]?.focus();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeNewMenu();
+      newNoteBtn?.focus();
+    }
+  });
   document.addEventListener("click", (e) => {
     if (newMenu && !(e.target as HTMLElement).closest(".new-menu-wrap")) {
-      newMenu.hidden = true;
+      closeNewMenu();
     }
   });
 
@@ -125,6 +168,19 @@ function wireEvents(editor: EditorInstance): void {
     }
     applyViewMode();
     renderAll();
+  });
+
+  // M6：笔记卡片键盘可达（Enter/Space 选中，tabindex 由 ui.ts cardHtml 提供）
+  document.getElementById("note-list")?.addEventListener("keydown", (e) => {
+    const card = (e.target as HTMLElement).closest<HTMLElement>(".note-card");
+    if (!card) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      selectedPath.set(card.dataset.path ?? null);
+      if (window.matchMedia("(max-width: 719px)").matches) mobileView.set("editor");
+      applyViewMode();
+      renderAll();
+    }
   });
 
   // 文件系统监听：外部改动 → 自动刷新列表（M2-4）+ 当前打开笔记重载（M3）
@@ -157,6 +213,81 @@ function wireEvents(editor: EditorInstance): void {
 
   // 窗口尺寸变化时校正单栏视图模式
   window.addEventListener("resize", applyViewMode);
+
+  // --- M6：设置弹层 ---
+  const backdrop = document.getElementById("settings-backdrop") as HTMLElement | null;
+  const themeSel = document.getElementById("set-theme") as HTMLSelectElement | null;
+  const fontSel = document.getElementById("set-font") as HTMLSelectElement | null;
+  const openSettings = (): void => {
+    if (!backdrop) return;
+    // 打开时同步顶栏快速切换后的主题/字号
+    if (themeSel) {
+      const cur = localStorage.getItem("theme");
+      themeSel.value = cur === "dark" ? "dark" : cur === "light" ? "light" : "system";
+    }
+    if (fontSel) fontSel.value = (localStorage.getItem("fontScale") as string) || "standard";
+    backdrop.hidden = false;
+    void loadSettingsForm();
+  };
+  document.getElementById("settings-btn")?.addEventListener("click", openSettings);
+  document.getElementById("settings-close")?.addEventListener("click", () => {
+    if (backdrop) backdrop.hidden = true;
+  });
+  backdrop?.addEventListener("click", (e) => {
+    if (e.target === backdrop) backdrop.hidden = true;
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && backdrop && !backdrop.hidden) backdrop.hidden = true;
+  });
+
+  // 主题三态
+  themeSel?.addEventListener("change", () => {
+    localStorage.setItem("theme", themeSel.value);
+    applyTheme(themeSel.value);
+  });
+  // 字号三档
+  fontSel?.addEventListener("change", () => {
+    localStorage.setItem("fontScale", fontSel.value);
+    applyFont(fontSel.value);
+  });
+  // 开机自启
+  const autoBox = document.getElementById("set-autostart") as HTMLInputElement | null;
+  autoBox?.addEventListener("change", () => {
+    void setAutostart(autoBox.checked).catch((e) => {
+      console.error("设置开机自启失败:", e);
+      autoBox.checked = !autoBox.checked;
+    });
+  });
+  // 数据目录（重启生效）
+  document.getElementById("set-root-pick")?.addEventListener("click", async () => {
+    const picked = await open({ title: "选择数据目录", directory: true, multiple: false }).catch(
+      () => null,
+    );
+    if (!picked || typeof picked !== "string") return;
+    try {
+      await setAppRoot(picked);
+      const rootEl = document.getElementById("set-root");
+      if (rootEl) rootEl.textContent = picked;
+      window.alert("数据目录已更新，重启应用后生效");
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : String(e);
+      console.error("设置数据目录失败:", e);
+      window.alert(`设置数据目录失败：${msg}`);
+    }
+  });
+}
+
+/** M6：加载设置表单（数据根目录 + 开机自启状态）。 */
+async function loadSettingsForm(): Promise<void> {
+  try {
+    const s = await getAppSettings();
+    const rootEl = document.getElementById("set-root");
+    if (rootEl) rootEl.textContent = s.root;
+    const autoBox = document.getElementById("set-autostart") as HTMLInputElement | null;
+    if (autoBox) autoBox.checked = s.autostart;
+  } catch (e) {
+    console.error("加载设置失败:", e);
+  }
 }
 
 // --- 关窗落盘（B2，自 M4 前置起由窗口入口接线） ---

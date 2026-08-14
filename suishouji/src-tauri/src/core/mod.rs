@@ -10,5 +10,6 @@ pub mod filelock;
 pub mod frontmatter;
 pub mod model;
 pub mod pathguard;
+pub mod settings;
 pub mod store;
 pub mod watcher;

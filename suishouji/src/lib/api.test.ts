@@ -9,12 +9,15 @@ import {
   deleteNote,
   docxExport,
   docxImport,
+  getAppSettings,
   hideQuicknote,
   listNotes,
   noteAbsPath,
   openMainWindow,
   readNote,
   releaseNoteLock,
+  setAppRoot,
+  setAutostart,
   writeNote,
 } from "./api";
 
@@ -102,6 +105,19 @@ describe("命令名与参数形状", () => {
       rel: "收件箱/会议纪要.md",
       targetPath: "C:\\out\\会议纪要.docx",
     });
+  });
+
+  it("应用设置命令参数形状（M6）", async () => {
+    mockedInvoke.mockResolvedValue({ root: "C:\\root", autostart: false });
+    await getAppSettings();
+    expect(mockedInvoke).toHaveBeenCalledWith("get_app_settings", undefined);
+
+    mockedInvoke.mockResolvedValue(undefined);
+    await setAppRoot("C:\\newroot");
+    expect(mockedInvoke).toHaveBeenCalledWith("set_app_root", { root: "C:\\newroot" });
+
+    await setAutostart(true);
+    expect(mockedInvoke).toHaveBeenCalledWith("set_autostart", { enabled: true });
   });
 });
 
