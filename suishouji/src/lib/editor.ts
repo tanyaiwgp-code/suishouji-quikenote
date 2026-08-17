@@ -262,9 +262,9 @@ class Editor implements EditorInstance {
             <button class="tbtn" data-cmd="code" title="代码块" aria-label="代码块">⟨/⟩</button>
             <button class="tbtn" data-cmd="image" title="插入图片" aria-label="插入图片">▦</button>
             <span class="toolbar-sep"></span>
-            <button class="tbtn" data-cmd="export" title="复制 Markdown" aria-label="复制 Markdown">⧉</button>
-            <button class="tbtn" data-cmd="import-docx" title="从 Word 导入 (DOCX)" aria-label="从 Word 导入">⇪</button>
-            <button class="tbtn" data-cmd="export-docx" title="导出为 Word (DOCX)" aria-label="导出为 Word">⇓</button>
+            <button class="tbtn" data-cmd="export" title="复制 Markdown" aria-label="复制 Markdown">⧉<span class="tbtn-label">复制 MD</span></button>
+            <button class="tbtn" data-cmd="import-docx" title="从 Word 导入 (DOCX)" aria-label="从 Word 导入">⇪<span class="tbtn-label">导入 Word</span></button>
+            <button class="tbtn" data-cmd="export-docx" title="导出为 Word (DOCX)" aria-label="导出为 Word">⇓<span class="tbtn-label">导出 Word</span></button>
             <span class="toolbar-grow"></span>
             ${o.deleteButton ? `
             <button class="tbtn danger" data-cmd="delete" title="删除笔记" aria-label="删除笔记">🗑</button>` : ""}
@@ -280,11 +280,11 @@ class Editor implements EditorInstance {
         </div>
         ${o.statusBar ? `
         <footer class="editor-status" id="ed-status">
+          <span class="save-wrap"><span class="save-dot" id="ed-save-dot"></span><span id="ed-save" class="save-state">未编辑</span></span>
+          <span class="status-grow"></span>
           <span id="ed-wc"></span>
           <span class="status-sep">·</span>
           <span id="ed-format"></span>
-          <span class="status-grow"></span>
-          <span id="ed-save" class="save-state">未编辑</span>
         </footer>` : ""}
       </div>`;
     this.bindShell();
@@ -958,6 +958,8 @@ class Editor implements EditorInstance {
     if (!el) return;
     el.textContent = text;
     el.className = "save-state" + (cls ? ` ${cls}` : "");
+    const dot = this.container?.querySelector<HTMLElement>("#ed-save-dot");
+    if (dot) dot.className = "save-dot" + (cls ? ` ${cls}` : "");
   }
 
   // ============================================================

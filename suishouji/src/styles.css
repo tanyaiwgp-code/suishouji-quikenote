@@ -348,17 +348,41 @@ textarea:focus:not(:focus-visible) {
   flex-shrink: 0;
 }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--fs-title);
   font-weight: var(--fw-semibold);
   color: var(--ink);
   letter-spacing: 0.02em;
 }
+.brand-logo { flex-shrink: 0; display: block; }
 .search {
+  position: relative;
   flex: 1;
   max-width: 480px;
   margin: 0 auto;
 }
-.search input { width: 100%; }
+/* 设计系统：搜索框纸感灰底 + 放大镜图标 */
+.search input {
+  width: 100%;
+  padding-left: 36px;
+  background-color: var(--bg);
+  border-color: transparent;
+}
+.search input:hover { border-color: var(--border); }
+.search input:focus {
+  border-color: var(--accent);
+  background-color: var(--surface);
+}
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-2);
+  pointer-events: none;
+}
 .topbar-actions { display: flex; gap: var(--space-2); align-items: center; }
 
 /* --- 工作区网格 --- */
@@ -439,7 +463,13 @@ textarea:focus:not(:focus-visible) {
 }
 .nav-item:hover { background-color: var(--mark); color: var(--ink); }
 .nav-item.active { background-color: var(--mark); color: var(--accent); }
-.nav-item.accent { color: var(--accent); font-size: 18px; }
+/* 设计系统：新建钮 = 实心 accent 圆角方块 + 白字形 */
+.nav-item.accent {
+  background-color: var(--accent);
+  color: #ffffff;
+  font-size: 18px;
+}
+.nav-item.accent:hover { background-color: var(--accent-2); }
 .nav-grow { flex: 1; }
 
 /* 新建菜单（M5）：＋按钮右侧弹出「新建 Markdown / 新建纯文本」 */
@@ -488,6 +518,9 @@ textarea:focus:not(:focus-visible) {
   letter-spacing: 0.05em;
 }
 .count { font-size: var(--fs-meta); color: var(--ink-2); }
+/* 设计系统：列表头「N 篇 · 按更新时间」辅助行 */
+.count-line { display: inline-flex; align-items: baseline; gap: 4px; }
+.count-note { font-size: var(--fs-meta); color: var(--ink-2); }
 
 .note-list {
   list-style: none;
@@ -505,9 +538,10 @@ textarea:focus:not(:focus-visible) {
   animation: fade-slide-in var(--transition-fast);
 }
 .note-card:hover { background-color: var(--mark); }
+/* 设计系统：选中卡片 = 白面 + 1px accent 描边 + 左侧强调条 */
 .note-card.selected {
   background-color: var(--surface);
-  box-shadow: 0 0 0 1px var(--border);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 .note-card.selected::before {
   content: "";
@@ -662,7 +696,11 @@ kbd {
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 .tbtn:hover { background-color: var(--mark); color: var(--ink); }
-.tbtn.active { background-color: var(--mark); color: var(--accent); }
+/* 设计系统：工具栏激活态 = 墨黑实底 + 白字 */
+.tbtn.active { background-color: var(--ink); color: var(--bg); }
+.tbtn-label { margin-left: 6px; }
+/* 视图分段钮保留浅底强调（画布：编辑/双栏/预览 为 mark 底 + accent 字） */
+.tbtn.mode-btn.active { background-color: var(--mark); color: var(--accent); }
 .toolbar-sep { width: 1px; height: 20px; background: var(--border); margin: 0 var(--space-2); }
 .toolbar-grow { flex: 1; }
 
@@ -799,6 +837,18 @@ kbd {
 .save-state.saved { color: var(--success); }
 .save-state.warn { color: var(--warn); }
 .save-state.error { color: var(--danger); }
+/* 设计系统：状态栏左「● 已自动保存」语义圆点 */
+.save-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.save-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  flex-shrink: 0;
+}
+.save-dot.saved { background: var(--success); }
+.save-dot.warn { background: var(--warn); }
+.save-dot.error { background: var(--danger); }
 
 /* --- 空状态（M2-5） --- */
 .empty-state {

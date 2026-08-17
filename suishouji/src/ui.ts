@@ -20,8 +20,9 @@ export function renderShell(): void {
   app.innerHTML = `
     <div class="app">
       <header class="topbar">
-        <div class="brand">随手记</div>
+        <div class="brand"><svg class="brand-logo" width="24" height="24" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="blg" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse"><stop stop-color="#38A3E8"/><stop offset="1" stop-color="#1E7BB8"/></linearGradient></defs><path d="M116 0 H396 Q512 0 512 116 V396 Q512 512 396 512 H116 Q0 512 0 396 V116 Q0 0 116 0 Z" fill="url(#blg)"/><path d="M168 118 H296 L372 194 V366 Q372 394 344 394 H168 Q140 394 140 366 V146 Q140 118 168 118 Z" fill="#FFFFFF"/><path d="M296 118 L372 194 H316 Q296 194 296 174 Z" fill="#CFE9FA"/><rect x="176" y="222" width="160" height="26" rx="13" fill="#38A3E8"/><rect x="176" y="274" width="120" height="26" rx="13" fill="#38A3E8"/><rect x="176" y="326" width="84" height="26" rx="13" fill="#2FBF8F"/></svg>随手记</div>
         <div class="search">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11 L14.5 14.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           <input id="search-input" type="search" placeholder="搜索笔记…" aria-label="搜索笔记" autocomplete="off" />
         </div>
         <div class="topbar-actions">
@@ -46,7 +47,7 @@ export function renderShell(): void {
         <aside class="col-list">
           <div class="list-head">
             <span id="list-title" class="list-title">全部笔记</span>
-            <span id="list-count" class="count"></span>
+            <span class="count-line"><span id="list-count" class="count"></span><span class="count-note">篇 · 按更新时间</span></span>
           </div>
           <ul id="note-list" class="note-list"></ul>
         </aside>
