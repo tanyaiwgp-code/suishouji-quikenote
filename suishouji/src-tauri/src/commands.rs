@@ -4,7 +4,7 @@
 use base64::Engine as _;
 use crate::core::docx;
 use crate::core::error::{CommandError, Error};
-use crate::core::model::{AppSettings, AssetImport, NoteMeta};
+use crate::core::model::{AppSettings, AssetImport, CrashReport, NoteMeta, TrashEntry};
 use crate::core::settings;
 use crate::core::store::FsStore;
 use std::path::PathBuf;
@@ -42,6 +42,90 @@ pub fn set_note_title(
 #[tauri::command]
 pub fn delete_note(store: State<FsStore>, rel: String) -> Result<(), CommandError> {
     store.delete_note(&rel).map_err(CommandError::from)
+}
+
+// --- P0-数据安全：回收站（软删除/恢复/清空） ---
+
+/// 软删除：把笔记移入 `.trash/`（可恢复）。
+#[tauri::command]
+pub fn trash_note(
+    store: State<FsStore>,
+    app: AppHandle,
+    rel: String,
+) -> Result<TrashEntry, CommandError> {
+    let entry = store.trash_note(&rel).map_err(CommandError::from)?;
+    let _ = app.emit("notes://changed", ());
+    Ok(entry)
+}
+
+/// 列出回收站全部条目（按删除时间倒序）。
+#[tauri::command]
+pub fn list_trash(store: State<FsStore>) -> Result<Vec<TrashEntry>, CommandError> {
+    store.list_trash().map_err(CommandError::from)
+}
+
+/// 恢复回收站条目到原路径。
+#[tauri::command]
+pub fn restore_note(
+    store: State<FsStore>,
+    app: AppHandle,
+    id: String,
+) -> Result<(), CommandError> {
+    store.restore_note(&id).map_err(CommandError::from)?;
+    let _ = app.emit("notes://changed", ());
+    Ok(())
+}
+
+/// 永久删除单个回收站条目。
+#[tauri::command]
+pub fn purge_note(
+    store: State<FsStore>,
+    app: AppHandle,
+    id: String,
+) -> Result<(), CommandError> {
+    store.purge_note(&id).map_err(CommandError::from)?;
+    let _ = app.emit("notes://changed", ());
+    Ok(())
+}
+
+/// 清空回收站（全部永久删除）。返回删除条目数。
+#[tauri::command]
+pub fn empty_trash(store: State<FsStore>) -> Result<usize, CommandError> {
+    store.empty_trash().map_err(CommandError::from)
+}
+
+// --- P0-数据安全：一键备份 / 恢复 ---
+
+/// 备份整个笔记根目录（排除回收站）为 zip 到 `target_path`（系统 save 对话框选的路径）。
+#[tauri::command]
+pub fn backup_all(store: State<FsStore>, target_path: String) -> Result<usize, CommandError> {
+    store.backup_all(&target_path).map_err(CommandError::from)
+}
+
+/// 从备份 zip 恢复笔记（覆盖同名文件；防 zip-slip）。
+#[tauri::command]
+pub fn restore_backup(
+    store: State<FsStore>,
+    app: AppHandle,
+    source_path: String,
+) -> Result<usize, CommandError> {
+    let n = store.restore_backup(&source_path).map_err(CommandError::from)?;
+    let _ = app.emit("notes://changed", ());
+    Ok(n)
+}
+
+/// P0-数据安全/体验：在系统文件管理器中打开应用日志目录（排查崩溃用）。
+#[tauri::command]
+pub fn open_log_dir(app: AppHandle) -> Result<(), CommandError> {
+    let dir = app
+        .path()
+        .app_log_dir()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let _ = std::fs::create_dir_all(&dir);
+    tauri_plugin_opener::OpenerExt::opener(&app)
+        .open_path(dir.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| CommandError::new("open_log_dir_failed", format!("打开日志目录失败：{e}")))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -203,6 +287,34 @@ pub fn hide_quicknote(app: AppHandle) -> Result<(), CommandError> {
 }
 
 // --- M6：应用设置 ---
+
+/// P0-商用化：读取崩溃日志（crash.log，见 lib.rs panic hook）。
+/// 返回是否存在 + 路径 + 内容首行摘要，供前端启动时提示用户。
+#[tauri::command]
+pub fn get_crash_report(app: AppHandle) -> Result<CrashReport, CommandError> {
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let crash_path = log_dir.join("crash.log");
+    if !crash_path.exists() {
+        return Ok(CrashReport {
+            exists: false,
+            path: crash_path.to_string_lossy().into_owned(),
+            message: String::new(),
+        });
+    }
+    let message = std::fs::read_to_string(&crash_path)
+        .unwrap_or_default()
+        .chars()
+        .take(500)
+        .collect();
+    Ok(CrashReport {
+        exists: true,
+        path: crash_path.to_string_lossy().into_owned(),
+        message,
+    })
+}
 
 /// M6：读取应用设置（数据根目录 + 开机自启状态）。
 #[tauri::command]

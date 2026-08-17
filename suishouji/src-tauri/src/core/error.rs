@@ -20,6 +20,10 @@ pub enum Error {
     #[error("资源不存在：{0}")]
     NotFound(String),
 
+    /// P0-数据安全：恢复回收站条目时，原路径已被新文件占用。
+    #[error("原位置已有文件，无法恢复：{0}")]
+    RestoreConflict(String),
+
     /// 不支持的图片类型（非 png/jpg/jpeg/gif/webp/bmp/svg）。
     #[error("不支持的图片类型：{0}")]
     UnsupportedType(String),
@@ -62,6 +66,7 @@ impl Error {
             Error::InvalidPath(_) => "invalid_path",
             Error::Locked(_) => "locked",
             Error::NotFound(_) => "not_found",
+            Error::RestoreConflict(_) => "restore_conflict",
             Error::UnsupportedType(_) => "unsupported_type",
             Error::ImageTooLarge(_) => "image_too_large",
             Error::ImageLimitReached(_) => "image_limit_reached",
@@ -110,6 +115,7 @@ mod tests {
             (Error::InvalidPath("a".into()), "invalid_path"),
             (Error::Locked("a".into()), "locked"),
             (Error::NotFound("a".into()), "not_found"),
+            (Error::RestoreConflict("a".into()), "restore_conflict"),
             (Error::UnsupportedType("a".into()), "unsupported_type"),
             (Error::ImageTooLarge("a".into()), "image_too_large"),
             (Error::ImageLimitReached("a".into()), "image_limit_reached"),

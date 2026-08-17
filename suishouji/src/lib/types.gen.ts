@@ -26,6 +26,23 @@ rel: string,
  */
 count: number, };
 
+/**
+ * P0-商用化：崩溃日志报告（lib.rs panic hook 写入 app_log_dir/crash.log）。
+ */
+export type CrashReport = { 
+/**
+ * 崩溃日志是否存在（上次运行是否异常退出）。
+ */
+exists: boolean, 
+/**
+ * crash.log 绝对路径（供用户定位/上报）。
+ */
+path: string, 
+/**
+ * 崩溃信息摘要（前 500 字）。
+ */
+message: string, };
+
 export type NoteFormat = "md" | "txt";
 
 export type NoteMeta = { 
@@ -53,3 +70,28 @@ preview: string,
  * 正文前 500 字，供前端倒排索引（M2 搜索）。
  */
 searchText: string, };
+
+/**
+ * P0-数据安全：回收站条目（软删除的笔记，见 store.rs trash/restore）。
+ */
+export type TrashEntry = { 
+/**
+ * 回收站条目目录名（`.trash/<id>/`），恢复/永久删除用。
+ */
+id: string, 
+/**
+ * 被删前的原始相对路径（如 `收件箱/xxx.md`）。
+ */
+originalRel: string, 
+/**
+ * 展示标题（frontmatter title 或文件名）。
+ */
+title: string, format: NoteFormat, 
+/**
+ * 删除时间（Unix 毫秒）。
+ */
+deletedAt: number, 
+/**
+ * 该条目携带的图片数。
+ */
+imageCount: number, };

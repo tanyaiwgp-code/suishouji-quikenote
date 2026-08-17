@@ -1,0 +1,73 @@
+# P0-商用化：自动发布 workflow。
+# 触发：推送 v* tag（如 v0.2.0）→ 自动构建（前端 + Rust release + NSIS 安装器 + 签名 + latest.json）
+#      → 创建 GitHub Release 并上传产物（安装器自动附带 .sig 签名）。
+# 前置：仓库需配置 3 个 Secrets（见 发布与自动更新流程.md 第 4 节）：
+#   - TAURI_SIGNING_PRIVATE_KEY：更新签名私钥全文（.tauri-keys/suishouji-updater.key 的内容）
+#   - TAURI_SIGNING_PRIVATE_KEY_PASSWORD：私钥密码
+#   - GITHUB_TOKEN：不需要配置（仓库自带，权限在下方 permissions 声明）
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# 创建 Release 需要写权限（GITHUB_TOKEN 默认只读，必须显式提升）
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建并发布（NSIS + 签名 + latest.json）
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: suishouji
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: suishouji/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: suishouji/src-tauri
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 前端门禁（tsc + eslint + vitest）
+        run: npm run check
+
+      - name: 构建并发布（tauri-action 自动：npm run build → cargo release → NSIS 打包 + 签名 + latest.json → 上传 Release）
+        # 注意：必须直接发布（releaseDraft: false）——
+        #   自动更新的 endpoint 是 `releases/latest/download/latest.json`，
+        #   草稿 Release 的资产不会出现在 latest 路径，应用内检查更新会 404。
+        #   如需人工审核，可临时改为 true，但发布后应用内更新才生效。
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 签名私钥：GitHub Secret 存私钥文件全文（多行粘贴即可）；缺这两个 Secret 时构建会跳过签名（updater 不可用）
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "随手记 v__VERSION__"
+          releaseBody: |
+            ## 更新内容
+            （在此维护更新说明；也可用 GitHub Release 界面后续编辑）
+
+            ---
+            自动构建发布。安装器已签名，应用内会自动检查更新（endpoint 指向本 Release 的 latest.json）。
+            安装器：`随手记_<版本>_x64-setup.exe`
+            签名文件：`随手记_<版本>_x64-setup.exe.sig`
+            更新清单：`latest.json`（tauri-action 自动生成并上传）
+          releaseDraft: false
+          prerelease: false

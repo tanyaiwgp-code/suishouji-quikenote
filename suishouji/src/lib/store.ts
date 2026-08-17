@@ -1,12 +1,14 @@
 // 轻量状态（nanostores）。M2 的 UI 直接订阅/读取这些 atom。
 import { atom } from "nanostores";
-import type { NoteMeta } from "../types";
+import type { NoteMeta, TrashEntry } from "../types";
 import { NoteIndex } from "./search";
 
 export const notes = atom<NoteMeta[]>([]);
+/** P0-数据安全：回收站条目列表（navView === "trash" 时展示）。 */
+export const trash = atom<TrashEntry[]>([]);
 export const selectedPath = atom<string | null>(null);
 export const query = atom<string>("");
-export type NavView = "all" | "pinned";
+export type NavView = "all" | "pinned" | "trash";
 export const navView = atom<NavView>("all");
 export type MobileView = "list" | "editor";
 export const mobileView = atom<MobileView>("list");

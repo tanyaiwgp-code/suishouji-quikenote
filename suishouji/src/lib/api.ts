@@ -2,7 +2,7 @@
 // 由 contract.test.ts 契约测试锁定）。
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { NoteMeta, AssetImport, AppSettings } from "../types";
+import type { NoteMeta, AssetImport, AppSettings, CrashReport, TrashEntry } from "../types";
 
 // --- 结构化错误 ---
 // Rust 端 CommandError 序列化为 { code, message }（见 src-tauri/src/core/error.rs）。
@@ -54,6 +54,26 @@ export const readNote = (rel: string): Promise<string> => invokeOrThrow<string>(
 export const writeNote = (rel: string, content: string): Promise<void> =>
   invokeOrThrow<void>("write_note", { rel, content });
 export const deleteNote = (rel: string): Promise<void> => invokeOrThrow<void>("delete_note", { rel });
+/** P0-数据安全：软删除（移入回收站，可恢复），返回回收站条目。 */
+export const trashNote = (rel: string): Promise<TrashEntry> =>
+  invokeOrThrow<TrashEntry>("trash_note", { rel });
+/** P0-数据安全：列出回收站全部条目。 */
+export const listTrash = (): Promise<TrashEntry[]> => invokeOrThrow<TrashEntry[]>("list_trash");
+/** P0-数据安全：恢复回收站条目到原路径。 */
+export const restoreNote = (id: string): Promise<void> =>
+  invokeOrThrow<void>("restore_note", { id });
+/** P0-数据安全：永久删除单个回收站条目。 */
+export const purgeNote = (id: string): Promise<void> => invokeOrThrow<void>("purge_note", { id });
+/** P0-数据安全：清空回收站（返回删除条目数）。 */
+export const emptyTrash = (): Promise<number> => invokeOrThrow<number>("empty_trash");
+/** P0-数据安全：一键备份整个笔记库为 zip（返回文件数）。 */
+export const backupAll = (targetPath: string): Promise<number> =>
+  invokeOrThrow<number>("backup_all", { targetPath });
+/** P0-数据安全：从备份 zip 恢复（返回文件数）。 */
+export const restoreBackup = (sourcePath: string): Promise<number> =>
+  invokeOrThrow<number>("restore_backup", { sourcePath });
+/** P0-数据安全：在文件管理器中打开应用日志目录。 */
+export const openLogDir = (): Promise<void> => invokeOrThrow<void>("open_log_dir");
 /** M9：设置笔记 frontmatter 标题（后端改文件并广播刷新）。 */
 export const setNoteTitle = (rel: string, title: string): Promise<void> =>
   invokeOrThrow<void>("set_note_title", { rel, title });
@@ -98,6 +118,12 @@ export const setAppRoot = (root: string): Promise<void> => invokeOrThrow<void>("
 /** 开关开机自启。 */
 export const setAutostart = (enabled: boolean): Promise<void> =>
   invokeOrThrow<void>("set_autostart", { enabled });
+
+// --- P0-商用化：崩溃日志 ---
+
+/** 读取崩溃日志报告（是否存在 + 路径 + 摘要），见 Rust commands.rs get_crash_report。 */
+export const getCrashReport = (): Promise<CrashReport> =>
+  invokeOrThrow<CrashReport>("get_crash_report");
 
 /** 导出 convertFileSrc，供预览图片路径重写。 */
 export { convertFileSrc };

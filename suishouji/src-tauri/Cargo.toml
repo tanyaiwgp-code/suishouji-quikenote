@@ -1,8 +1,9 @@
 [package]
 name = "suishouji"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Tauri App"
-authors = ["you"]
+license = "AGPL-3.0-only"
+authors = ["Tanya Wang"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -31,6 +32,12 @@ tauri-plugin-autostart = "2"
 tauri-plugin-window-state = "2"
 # M5：系统文件对话框（open 导入 DOCX / save 导出 DOCX）
 tauri-plugin-dialog = "2"
+# P0-商用化：自动更新（检查/下载/安装，配合 tauri.conf.json updater 配置与签名）
+tauri-plugin-updater = "2"
+# P0-商用化：统一日志（文件 + 终端）+ panic 崩溃捕获（配合 log_dir 上报）
+tauri-plugin-log = { version = "2", features = ["tracing"] }
+# P0-商用化：更新安装完成后自动重启应用（updater 官方推荐配套）
+tauri-plugin-process = "2"
 # M5：DOCX 处理（zip 容器 + roxmltree 只读 XML 解析，防 XXE）
 zip = "2"
 roxmltree = "0.21"
@@ -45,4 +52,6 @@ base64 = "0.22"
 # 需普通依赖（非 dev），因 #[derive(TS)] 在 lib 源码内展开需 trait 可见。
 # default feature 含 serde-compat（读取 #[serde(rename_all)]）。release 构建中运行时代码会被消除。
 ts-rs = "12"
+# P0-商用化：log::error! 等宏（tauri-plugin-log 的 Rust 侧日志入口）
+log = "0.4"
 

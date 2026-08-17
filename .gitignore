@@ -17,3 +17,6 @@ desktop.ini
 # Playwright 产物（测试结果 / 报告）
 test-results/
 playwright-report/
+
+# 设计工具导出截图（UI 设计过程产物，不提交）
+exports/

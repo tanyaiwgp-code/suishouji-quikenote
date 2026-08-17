@@ -10,12 +10,21 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
+
 use crate::core::encoding;
 use crate::core::error::Error;
 use crate::core::filelock::LockRegistry;
 use crate::core::frontmatter;
-use crate::core::model::{AssetImport, NoteFormat, NoteMeta};
+use crate::core::model::{AssetImport, NoteFormat, NoteMeta, TrashEntry};
 use crate::core::pathguard::PathGuard;
+
+/// P0-数据安全：回收站目录名（软删除笔记的存放处，列表扫描/备份时排除）。
+const TRASH_DIR: &str = ".trash";
+/// 回收站条目元数据文件名（`.trash/<id>/meta.json`）。
+const TRASH_META: &str = "meta.json";
 
 /// preview 截断长度（设计文档：首行 80 字）。
 const PREVIEW_LEN: usize = 80;
@@ -127,6 +136,10 @@ impl FsStore {
             let path = entry.path();
             let ft = entry.file_type()?;
             if ft.is_dir() {
+                // P0-数据安全：回收站目录（.trash）不参与笔记列表扫描
+                if entry.file_name().to_string_lossy() == TRASH_DIR {
+                    continue;
+                }
                 self.walk(&path, out)?;
             } else if is_note_file(&path) {
                 out.push(self.build_meta(&path)?);
@@ -223,6 +236,282 @@ impl FsStore {
             }
         }
         Ok(())
+    }
+
+    // ---------- P0-数据安全：回收站（软删除/恢复/清空） ----------
+
+    /// 软删除：把笔记移动到 `.trash/<id>/`（保留原文件名 + 独占 assets + meta.json）。
+    /// 与 `delete_note`（永久删除）不同，文件仍在磁盘，可 `restore_note` 恢复。
+    pub fn trash_note(&self, rel: &str) -> Result<TrashEntry, Error> {
+        let path = self.guard.resolve(rel)?;
+        if path.is_dir() {
+            return Err(Error::InvalidPath(rel.to_string()));
+        }
+        if !path.is_file() {
+            return Err(Error::NotFound(rel.to_string()));
+        }
+        // 生成条目目录：`.trash/<时间戳>-<序号>/`
+        let trash_root = self.root.join(TRASH_DIR);
+        std::fs::create_dir_all(&trash_root)?;
+        let id = format!(
+            "{}-{}",
+            modified_millis(&path).unwrap_or(0),
+            TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
+        let entry_dir = trash_root.join(&id);
+        if entry_dir.exists() {
+            // 极低概率碰撞：序号已全局唯一，此处兜底
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "回收站条目已存在",
+            )));
+        }
+        std::fs::create_dir_all(&entry_dir)?;
+
+        // 移动笔记文件（保留原文件名）
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| Error::InvalidPath(rel.to_string()))?;
+        let target_note = entry_dir.join(file_name);
+        std::fs::rename(&path, &target_note)?;
+        self.own.record(target_note.clone());
+
+        // 独占 assets 目录一并移动（无同 stem 兄弟时；共享时留在原地）
+        let mut image_count = 0u32;
+        let assets = path.with_extension("").join("assets");
+        if assets.is_dir() && !has_sibling_same_stem(&path) {
+            let target_assets = entry_dir.join("assets");
+            std::fs::rename(&assets, &target_assets)?;
+            self.own.record(target_assets.clone());
+            // 注意：assets 移到 `.trash/<id>/assets`（与笔记文件平级），
+            // 不能按 `count_images(&target_note)`（推导 `…/<id>/p/assets`）统计，会得 0。
+            image_count = count_images_in(&target_assets);
+        }
+
+        // 写元数据（原始路径 + 删除时间 + 标题）
+        let bytes = read_prefix(&target_note, META_READ_LIMIT)?;
+        let text = encoding::decode(&bytes);
+        let fm = frontmatter::parse(&text);
+        let stem = target_note
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let meta = TrashMeta {
+            original_rel: rel.to_string(),
+            deleted_at: now_millis(),
+            title: fm.title.clone().unwrap_or(stem),
+        };
+        std::fs::write(
+            entry_dir.join(TRASH_META),
+            serde_json::to_string(&meta).map_err(|e| Error::Io(std::io::Error::other(e)))?,
+        )?;
+        self.own.record(entry_dir.join(TRASH_META));
+
+        let format = note_format(&target_note);
+        Ok(TrashEntry {
+            id,
+            original_rel: meta.original_rel,
+            title: meta.title,
+            format,
+            deleted_at: meta.deleted_at,
+            image_count,
+        })
+    }
+
+    /// 列出回收站全部条目（按删除时间倒序）。
+    pub fn list_trash(&self) -> Result<Vec<TrashEntry>, Error> {
+        let trash_root = self.root.join(TRASH_DIR);
+        let rd = match std::fs::read_dir(&trash_root) {
+            Ok(rd) => rd,
+            Err(_) => return Ok(Vec::new()), // 回收站目录不存在 = 空
+        };
+        let mut out = Vec::new();
+        for entry in rd.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let meta_path = dir.join(TRASH_META);
+            if !meta_path.is_file() {
+                continue; // 无 meta 的残留目录，忽略
+            }
+            let raw = match std::fs::read_to_string(&meta_path) {
+                Ok(raw) => raw,
+                Err(_) => continue,
+            };
+            let meta: TrashMeta = match serde_json::from_str(&raw) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            // 找条目内笔记文件（可能有 .md/.txt）
+            let Some(note) = find_note_file(&dir) else {
+                continue;
+            };
+            let id = entry.file_name().to_string_lossy().into_owned();
+            out.push(TrashEntry {
+                id,
+                original_rel: meta.original_rel,
+                title: meta.title,
+                format: note_format(&note),
+                deleted_at: meta.deleted_at,
+                // assets 在 `.trash/<id>/assets`（与笔记文件平级），直接统计该目录
+                image_count: count_images_in(&dir.join("assets")),
+            });
+        }
+        out.sort_by_key(|b| std::cmp::Reverse(b.deleted_at));
+        Ok(out)
+    }
+
+    /// 恢复：把 `.trash/<id>/` 里的笔记移回原路径（含独占 assets）。
+    /// 原路径已存在文件时返回 `Error::RestoreConflict`。
+    pub fn restore_note(&self, id: &str) -> Result<(), Error> {
+        let entry_dir = self.trash_entry_dir(id)?;
+        let meta_path = entry_dir.join(TRASH_META);
+        let raw = std::fs::read_to_string(&meta_path)?;
+        let meta: TrashMeta =
+            serde_json::from_str(&raw).map_err(|e| Error::Io(std::io::Error::other(e)))?;
+        let target = self.guard.resolve(&meta.original_rel)?;
+        if target.exists() {
+            return Err(Error::RestoreConflict(meta.original_rel));
+        }
+        let Some(note) = find_note_file(&entry_dir) else {
+            return Err(Error::NotFound(id.to_string()));
+        };
+        // 移动笔记文件
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::rename(&note, &target)?;
+        self.own.record(target.clone());
+        // 移动独占 assets
+        let entry_assets = entry_dir.join("assets");
+        if entry_assets.is_dir() {
+            let target_assets = target.with_extension("").join("assets");
+            std::fs::create_dir_all(&target_assets)?;
+            std::fs::rename(&entry_assets, &target_assets)?;
+            self.own.record(target_assets.clone());
+        }
+        // 清理条目目录（meta 已无用）
+        let _ = std::fs::remove_file(&meta_path);
+        let _ = std::fs::remove_dir(&entry_dir);
+        Ok(())
+    }
+
+    /// 永久删除单个回收站条目（彻底删除，不可恢复）。
+    pub fn purge_note(&self, id: &str) -> Result<(), Error> {
+        let entry_dir = self.trash_entry_dir(id)?;
+        std::fs::remove_dir_all(&entry_dir)?;
+        Ok(())
+    }
+
+    /// 清空回收站（全部永久删除）。返回删除的条目数。
+    pub fn empty_trash(&self) -> Result<usize, Error> {
+        let trash_root = self.root.join(TRASH_DIR);
+        let rd = match std::fs::read_dir(&trash_root) {
+            Ok(rd) => rd,
+            Err(_) => return Ok(0),
+        };
+        let mut n = 0usize;
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                std::fs::remove_dir_all(&p)?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    /// 解析 `.trash/<id>` 路径：校验 id 无路径分隔符（防穿越），返回条目目录。
+    fn trash_entry_dir(&self, id: &str) -> Result<PathBuf, Error> {
+        if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+            return Err(Error::InvalidPath(id.to_string()));
+        }
+        let dir = self.root.join(TRASH_DIR).join(id);
+        if !dir.is_dir() {
+            return Err(Error::NotFound(id.to_string()));
+        }
+        Ok(dir)
+    }
+
+    // ---------- P0-数据安全：一键备份 / 恢复（zip） ----------
+
+    /// 把整个笔记根目录（排除 `.trash` 回收站与临时文件）打包为 zip 写到 `target_path`。
+    /// 返回写入的文件数。zip 结构 = 根目录内容（不含根目录本身一层）。
+    pub fn backup_all(&self, target_path: &str) -> Result<usize, Error> {
+        let file = std::fs::File::create(target_path)?;
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        let mut count = 0usize;
+        self.zip_dir(&self.root, &mut zip, options, "", &mut count)?;
+        zip.finish().map_err(|e| Error::Io(std::io::Error::other(e)))?;
+        Ok(count)
+    }
+
+    /// 递归把目录内容写入 zip（前缀 `prefix` 为 zip 内相对路径，`""` 表示根）。
+    fn zip_dir(
+        &self,
+        dir: &Path,
+        zip: &mut ZipWriter<std::fs::File>,
+        options: SimpleFileOptions,
+        prefix: &str,
+        count: &mut usize,
+    ) -> Result<(), Error> {
+        let rd = std::fs::read_dir(dir)?;
+        for entry in rd.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // 排除回收站与原子写临时文件（`.xxx.tmp`）
+            if name == TRASH_DIR || (name.starts_with('.') && name.ends_with(".tmp")) {
+                continue;
+            }
+            let rel = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            if path.is_dir() {
+                zip.add_directory(&rel, options)
+                    .map_err(|e| Error::Io(std::io::Error::other(e)))?;
+                self.zip_dir(&path, zip, options, &rel, count)?;
+            } else if path.is_file() {
+                zip.start_file(&rel, options)
+                    .map_err(|e| Error::Io(std::io::Error::other(e)))?;
+                let mut f = std::fs::File::open(&path)?;
+                std::io::copy(&mut f, zip).map_err(Error::Io)?;
+                *count += 1;
+            }
+        }
+        Ok(())
+    }
+
+    /// 从备份 zip 恢复：把 zip 内文件解压回根目录（覆盖同名；目录结构与 zip 一致）。
+    /// 安全：每个条目路径都经 `PathGuard::resolve` 校验（防 zip-slip `../` 逃逸）。
+    /// 返回解压的文件数。
+    pub fn restore_backup(&self, source_path: &str) -> Result<usize, Error> {
+        let file = std::fs::File::open(source_path)?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| Error::Io(std::io::Error::other(e)))?;
+        let mut count = 0usize;
+        for i in 0..archive.len() {
+            let mut entry = archive
+                .by_index(i)
+                .map_err(|e| Error::Io(std::io::Error::other(e)))?;
+            let name = entry.name().to_string();
+            if name.ends_with('/') || entry.is_dir() {
+                continue; // 目录条目由文件写入时的 create_dir_all 隐式创建
+            }
+            // 防 zip-slip：路径必须解析到根内
+            let abs = self.guard.resolve(&name)?;
+            if let Some(parent) = abs.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut out = std::fs::File::create(&abs)?;
+            std::io::copy(&mut entry, &mut out)?;
+            self.own.record(abs);
+            count += 1;
+        }
+        Ok(count)
     }
 
     // ---------- M1-7 文件锁 ----------
@@ -365,6 +654,46 @@ impl FsStore {
 
 // ---------- 内部工具 ----------
 
+/// 回收站条目元数据（`.trash/<id>/meta.json`）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TrashMeta {
+    /// 被删前的原始相对路径。
+    original_rel: String,
+    /// 删除时间（Unix 毫秒）。
+    deleted_at: i64,
+    /// 展示标题（frontmatter title 或文件名）。
+    title: String,
+}
+
+/// 当前时间（Unix 毫秒）。
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// 在目录内查找第一个笔记文件（.md/.txt）。
+fn find_note_file(dir: &Path) -> Option<PathBuf> {
+    let rd = std::fs::read_dir(dir).ok()?;
+    rd.flatten().find_map(|e| {
+        let p = e.path();
+        (p.is_file() && is_note_file(&p)).then_some(p)
+    })
+}
+
+/// 根据扩展名判断笔记格式（默认 Txt）。
+fn note_format(path: &Path) -> NoteFormat {
+    if matches!(
+        path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()),
+        Some(e) if e == "md"
+    ) {
+        NoteFormat::Md
+    } else {
+        NoteFormat::Txt
+    }
+}
+
 fn is_note_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -402,8 +731,14 @@ fn has_sibling_same_stem(note: &Path) -> bool {
 
 /// 图片计数：统计 `笔记名/assets/` 下图片扩展名的文件数（ADR #3）。
 fn count_images(note_path: &Path) -> u32 {
-    let assets = note_path.with_extension("").join("assets");
-    let rd = match std::fs::read_dir(&assets) {
+    count_images_in(&note_path.with_extension("").join("assets"))
+}
+
+/// 图片计数：直接统计给定 assets 目录下图片扩展名的文件数。
+/// 回收站条目的 assets 在 `.trash/<id>/assets`（与笔记文件平级，非 `<stem>/assets`），
+/// 需要按实际目录统计，因此单独抽出此函数。
+fn count_images_in(assets: &Path) -> u32 {
+    let rd = match std::fs::read_dir(assets) {
         Ok(rd) => rd,
         Err(_) => return 0,
     };
@@ -906,5 +1241,160 @@ mod tests {
         reg.record(p.clone());
         assert!(reg.is_own(&p));
         assert!(!reg.is_own(&PathBuf::from("C:/notes/b.md")), "其它路径不受影响");
+    }
+
+    // ---- P0-数据安全：回收站 ----
+
+    #[test]
+    fn trash_soft_deletes_and_restores() {
+        let root = temp_root("trash_roundtrip");
+        let store = FsStore::new(root.clone()).unwrap();
+        store.write_note("收件箱/a.md", "---\ntitle: 我的笔记\n---\n正文").unwrap();
+
+        // 软删除：文件移入 .trash，原位置消失，列表为空
+        let t = store.trash_note("收件箱/a.md").unwrap();
+        assert_eq!(t.original_rel, "收件箱/a.md");
+        assert_eq!(t.title, "我的笔记");
+        assert!(!root.join("收件箱/a.md").exists());
+        assert!(store.list_notes().unwrap().is_empty(), "回收站条目不进列表");
+        assert_eq!(store.list_trash().unwrap().len(), 1);
+
+        // 恢复：回到原路径，回收站清空
+        store.restore_note(&t.id).unwrap();
+        assert!(root.join("收件箱/a.md").is_file());
+        assert!(store.list_trash().unwrap().is_empty());
+        assert_eq!(store.read_note("收件箱/a.md").unwrap(), "---\ntitle: 我的笔记\n---\n正文");
+        cleanup(&root);
+    }
+
+    #[test]
+    fn trash_keeps_assets_and_counts_them() {
+        let root = temp_root("trash_assets");
+        let store = FsStore::new(root.clone()).unwrap();
+        store.write_note("p.md", "x").unwrap();
+        let src = make_src_img(&root, "photo.png");
+        store.import_asset("p.md", src.to_str().unwrap()).unwrap();
+        assert!(root.join("p/assets").is_dir());
+
+        let t = store.trash_note("p.md").unwrap();
+        assert_eq!(t.image_count, 1);
+        assert!(!root.join("p/assets").exists(), "独占 assets 随笔记移入回收站");
+        assert!(!root.join("p.md").exists());
+
+        store.restore_note(&t.id).unwrap();
+        assert!(root.join("p/assets").is_dir(), "assets 一并恢复");
+        assert_eq!(store.list_notes().unwrap()[0].image_count, 1);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn trash_restore_conflict_when_original_exists() {
+        let root = temp_root("trash_conflict");
+        let store = FsStore::new(root.clone()).unwrap();
+        store.write_note("a.md", "旧内容").unwrap();
+        let t = store.trash_note("a.md").unwrap();
+        // 原路径被新文件占用
+        store.write_note("a.md", "新内容").unwrap();
+        assert!(matches!(
+            store.restore_note(&t.id),
+            Err(Error::RestoreConflict(_))
+        ));
+        cleanup(&root);
+    }
+
+    #[test]
+    fn trash_purge_and_empty() {
+        let root = temp_root("trash_purge");
+        let store = FsStore::new(root.clone()).unwrap();
+        store.write_note("a.md", "x").unwrap();
+        store.write_note("b.md", "y").unwrap();
+        let ta = store.trash_note("a.md").unwrap();
+        let tb = store.trash_note("b.md").unwrap();
+
+        // 永久删除单个
+        store.purge_note(&ta.id).unwrap();
+        assert_eq!(store.list_trash().unwrap().len(), 1);
+
+        // 清空全部
+        let n = store.empty_trash().unwrap();
+        assert_eq!(n, 1);
+        assert!(store.list_trash().unwrap().is_empty());
+        let _ = tb;
+        cleanup(&root);
+    }
+
+    #[test]
+    fn trash_rejects_path_traversal_ids() {
+        let root = temp_root("trash_traversal");
+        let store = FsStore::new(root.clone()).unwrap();
+        for bad in ["../x", "a/b", "a\\b", "..", "..\\x"] {
+            assert!(store.restore_note(bad).is_err(), "应拒绝: {bad}");
+            assert!(store.purge_note(bad).is_err(), "应拒绝: {bad}");
+        }
+        cleanup(&root);
+    }
+
+    #[test]
+    fn trash_dir_excluded_from_notes_list() {
+        let root = temp_root("trash_excluded");
+        let store = FsStore::new(root.clone()).unwrap();
+        store.write_note("a.md", "x").unwrap();
+        store.trash_note("a.md").unwrap();
+        // 手动在 .trash 里再放一个 .md 文件，也不应进入列表
+        fs::create_dir_all(root.join(".trash/zzz")).unwrap();
+        fs::write(root.join(".trash/zzz/leak.md"), "x").unwrap();
+        assert!(store.list_notes().unwrap().is_empty(), ".trash 内文件不进笔记列表");
+        cleanup(&root);
+    }
+
+    // ---- P0-数据安全：备份 / 恢复 ----
+
+    #[test]
+    fn backup_all_roundtrips_notes_and_assets() {
+        let root = temp_root("backup_roundtrip");
+        let store = FsStore::new(root.clone()).unwrap();
+        store.write_note("收件箱/a.md", "---\ntitle: 甲\n---\n正文一").unwrap();
+        store.write_note("b.txt", "纯文本").unwrap();
+        let src = make_src_img(&root, "p.png");
+        store.import_asset("b.txt", src.to_str().unwrap()).unwrap();
+        // 回收站条目不应进备份
+        store.write_note("t.md", "trash-me").unwrap();
+        store.trash_note("t.md").unwrap();
+
+        let backup = root.join("backup.zip");
+        let n = store.backup_all(backup.to_str().unwrap()).unwrap();
+        assert!(n >= 3, "a.md + b.txt + b/assets 图片: {n}");
+        assert!(backup.is_file());
+
+        // 恢复到一个全新根目录（模拟还原）
+        let root2 = temp_root("backup_restore");
+        let store2 = FsStore::new(root2.clone()).unwrap();
+        let m = store2.restore_backup(backup.to_str().unwrap()).unwrap();
+        assert_eq!(m, n);
+        let notes = store2.list_notes().unwrap();
+        assert_eq!(notes.len(), 2, "恢复后 2 篇笔记（回收站条目不恢复）");
+        assert!(root2.join("收件箱/a.md").is_file());
+        assert_eq!(store2.read_note("收件箱/a.md").unwrap(), "---\ntitle: 甲\n---\n正文一");
+        assert!(root2.join("b/assets").is_dir(), "图片随笔记恢复");
+        cleanup(&root);
+        cleanup(&root2);
+    }
+
+    #[test]
+    fn restore_backup_rejects_zip_slip() {
+        // 构造含 `../evil.md` 条目的 zip，恢复必须被拒绝
+        let root = temp_root("zip_slip");
+        let store = FsStore::new(root.clone()).unwrap();
+        let zip_path = root.join("evil.zip");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        zip.start_file("../evil.md", options).unwrap();
+        use std::io::Write;
+        zip.write_all(b"pwned").unwrap();
+        zip.finish().unwrap();
+        assert!(store.restore_backup(zip_path.to_str().unwrap()).is_err(), "zip-slip 越界应拒绝");
+        assert!(!root.join("evil.md").exists());
+        cleanup(&root);
     }
 }

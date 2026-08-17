@@ -57,6 +57,38 @@ pub struct AppSettings {
     pub autostart: bool,
 }
 
+/// P0-商用化：崩溃日志报告（lib.rs panic hook 写入 app_log_dir/crash.log）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "types.gen.ts")]
+pub struct CrashReport {
+    /// 崩溃日志是否存在（上次运行是否异常退出）。
+    pub exists: bool,
+    /// crash.log 绝对路径（供用户定位/上报）。
+    pub path: String,
+    /// 崩溃信息摘要（前 500 字）。
+    pub message: String,
+}
+
+/// P0-数据安全：回收站条目（软删除的笔记，见 store.rs trash/restore）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "types.gen.ts")]
+pub struct TrashEntry {
+    /// 回收站条目目录名（`.trash/<id>/`），恢复/永久删除用。
+    pub id: String,
+    /// 被删前的原始相对路径（如 `收件箱/xxx.md`）。
+    pub original_rel: String,
+    /// 展示标题（frontmatter title 或文件名）。
+    pub title: String,
+    pub format: NoteFormat,
+    /// 删除时间（Unix 毫秒）。
+    #[ts(type = "number")]
+    pub deleted_at: i64,
+    /// 该条目携带的图片数。
+    pub image_count: u32,
+}
+
 #[cfg(test)]
 mod ts_export {
     use super::*;
@@ -71,6 +103,8 @@ mod ts_export {
         NoteMeta::export_all(&cfg).expect("导出 NoteMeta 到 types.gen.ts");
         AssetImport::export_all(&cfg).expect("导出 AssetImport 到 types.gen.ts");
         AppSettings::export_all(&cfg).expect("导出 AppSettings 到 types.gen.ts");
+        CrashReport::export_all(&cfg).expect("导出 CrashReport 到 types.gen.ts");
+        TrashEntry::export_all(&cfg).expect("导出 TrashEntry 到 types.gen.ts");
     }
 }
 

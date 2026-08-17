@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:window:allow-hide",
+    "core:app:default",
     "opener:default",
     "allow-list-notes",
     "allow-read-note",
@@ -22,6 +23,18 @@
     "allow-set-app-root",
     "allow-set-autostart",
     "allow-set-note-title",
-    "dialog:default"
+    "allow-get-crash-report",
+    "allow-trash-note",
+    "allow-list-trash",
+    "allow-restore-note",
+    "allow-purge-note",
+    "allow-empty-trash",
+    "allow-backup-all",
+    "allow-restore-backup",
+    "allow-open-log-dir",
+    "dialog:default",
+    "updater:default",
+    "process:default",
+    "log:default"
   ]
 }

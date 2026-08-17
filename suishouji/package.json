@@ -1,8 +1,9 @@
 {
   "name": "suishouji",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -23,7 +24,10 @@
     "@codemirror/view": "^6.43.8",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-log": "^2.9.0",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "markdown-it": "^15.0.0",
     "nanostores": "^1.4.2"
   },

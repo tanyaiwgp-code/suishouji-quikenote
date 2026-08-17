@@ -69,24 +69,33 @@ describe("命令名 4 清单契约", () => {
 
   it("命令名全集已建立基线（防空白/误提取）", () => {
     const build = sortedUnique(commandsFromBuild());
-    // M0-M6 已交付 16 个命令；新增命令时应同时更新此基线
+    // M0-M6 已交付 16 个命令；P0-商用化新增 get_crash_report + 回收站/备份 8 命令；新增命令时应同时更新此基线
     expect(build).toEqual([
       "acquire_note_lock",
       "assets_import",
       "assets_import_base64",
+      "backup_all",
       "delete_note",
       "docx_export",
       "docx_import",
+      "empty_trash",
       "get_app_settings",
+      "get_crash_report",
       "hide_quicknote",
       "list_notes",
+      "list_trash",
       "note_abs_path",
+      "open_log_dir",
       "open_main_window",
+      "purge_note",
       "read_note",
       "release_note_lock",
+      "restore_backup",
+      "restore_note",
       "set_app_root",
       "set_autostart",
       "set_note_title",
+      "trash_note",
       "write_note",
     ]);
   });

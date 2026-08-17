@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# 商用化：更新签名私钥目录（公钥 *.pub 可入库，私钥严禁提交）
+.tauri-keys/
+!.tauri-keys/*.pub
+
+# 本地 npm 缓存（沙箱/离线环境下用 --cache 指定到工作区时产生）
+.npm-cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

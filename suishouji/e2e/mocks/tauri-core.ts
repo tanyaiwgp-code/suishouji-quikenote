@@ -22,6 +22,9 @@ function seed(rel: string, content: string): void {
 seed("收件箱/2026-08-15_090000.md", "# 会议记录\n\n明天 10 点评审，讨论 M7 发布。");
 seed("项目/需求.txt", "纯文本草稿：随手记 E2E。");
 
+// P0-数据安全：回收站内存 mock（trash_note → 移入 / restore_note → 回 byPath）
+const trashById = new Map<string, { id: string; originalRel: string; title: string; format: "md" | "txt"; deletedAt: number; imageCount: number }>();
+
 let settings: AppSettings = { root: "C:/mock-notes", autostart: false };
 
 // 记录被调用的命令（供 E2E 断言数据链路），挂到 window 便于测试读取
@@ -84,6 +87,47 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
     case "delete_note":
       byPath.delete(args.rel as string);
       return undefined as T;
+    // P0-数据安全：回收站命令 mock（与真实后端语义一致）
+    case "trash_note": {
+      const rel = args.rel as string;
+      const m = byPath.get(rel);
+      if (!m) throw new Error(`not_found: ${rel}`);
+      byPath.delete(rel);
+      trashById.set(`trash-${rel}`, {
+        id: `trash-${rel}`,
+        originalRel: m.rel,
+        title: m.title ?? m.rel,
+        format: m.rel.toLowerCase().endsWith(".md") ? "md" : "txt",
+        deletedAt: counter++ * 1000,
+        imageCount: m.imageCount,
+      });
+      emit("notes://changed");
+      return trashById.get(`trash-${rel}`) as T;
+    }
+    case "list_trash":
+      return [...trashById.values()].sort((a, b) => b.deletedAt - a.deletedAt) as T;
+    case "restore_note": {
+      const id = args.id as string;
+      const t = trashById.get(id);
+      if (!t) throw new Error(`not_found: ${id}`);
+      trashById.delete(id);
+      seed(t.originalRel, "");
+      emit("notes://changed");
+      return undefined as T;
+    }
+    case "purge_note":
+      trashById.delete(args.id as string);
+      return undefined as T;
+    case "empty_trash": {
+      const n = trashById.size;
+      trashById.clear();
+      return n as T;
+    }
+    case "backup_all":
+    case "restore_backup":
+    case "open_log_dir":
+    case "get_crash_report":
+      return undefined as T;
     case "set_note_title": {
       const rel = args.rel as string;
       const m = byPath.get(rel);
@@ -118,6 +162,30 @@ export async function invoke<T>(cmd: string, args: Record<string, unknown> = {})
       return undefined as T;
     default:
       throw new Error(`e2e mock: 未实现的命令 ${cmd}`);
+  }
+}
+
+// --- P0-商用化：Tauri 插件（updater/log 等）静态导入 core 的 Channel/Resource ---
+// E2E 是纯 Web 环境（isTauri=false），插件函数不会被调用，只需同名类让 ESM 具名导入不报错。
+// 语义对齐 @tauri-apps/api/core，但去掉对 __TAURI_INTERNALS__ 的依赖。
+export class Channel<T = unknown> {
+  readonly id = 0;
+  private handler: (message: T) => void = () => {};
+  set onmessage(h: ((message: T) => void) | undefined) {
+    this.handler = h ?? (() => {});
+  }
+  send(message: T): void {
+    this.handler(message);
+  }
+}
+
+export class Resource {
+  readonly rid: number;
+  constructor(rid: number) {
+    this.rid = rid;
+  }
+  async close(): Promise<void> {
+    /* E2E 下不会调用（isTauri=false），保持无操作 */
   }
 }
 

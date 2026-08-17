@@ -1,9 +1,9 @@
 // 主窗口渲染：静态骨架 + 笔记列表 + 编辑器占位 + 空状态。
 // 轻渲染：状态变更时整体重绘（200 条规模内代价可忽略）。
 
-import { index, mobileView, navView, notes, query, selectedPath } from "./lib/store";
+import { index, mobileView, navView, notes, query, selectedPath, trash } from "./lib/store";
 import type { EditorInstance } from "./lib/editor";
-import type { NoteMeta } from "./types";
+import type { NoteMeta, TrashEntry } from "./types";
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector(sel) as T;
 
@@ -33,7 +33,7 @@ export function renderShell(): void {
         <nav class="col-nav" aria-label="导航">
           <button class="nav-item active" data-view="all" title="全部" aria-label="全部笔记">≡</button>
           <button class="nav-item" data-view="pinned" title="收藏" aria-label="收藏">☆</button>
-          <button class="nav-item" title="标签（后续版本）" aria-label="标签" disabled>#</button>
+          <button class="nav-item" data-view="trash" title="回收站" aria-label="回收站">🗑</button>
           <span class="nav-grow"></span>
           <span class="new-menu-wrap">
             <button class="nav-item accent" id="new-note" title="新建笔记" aria-label="新建笔记" aria-haspopup="menu" aria-expanded="false" aria-controls="new-menu">＋</button>
@@ -86,6 +86,30 @@ export function renderShell(): void {
               <option value="standard">标准</option>
               <option value="large">大</option>
             </select>
+          </div>
+          <!-- P0-数据安全：OneDrive 重定向提示（由 main.ts 检测后显示） -->
+          <div class="setting-row warn-row" id="onedrive-warn" hidden>
+            <span class="setting-label">⚠ 提示</span>
+            <div class="setting-control setting-value">
+              数据目录在 OneDrive 同步范围内。请留意云端同步可能与本地写入冲突，建议改为纯本地目录（见「数据目录」）。
+            </div>
+          </div>
+          <!-- P0-数据安全：备份 / 恢复 -->
+          <div class="setting-row">
+            <span class="setting-label">数据安全</span>
+            <div class="setting-control setting-actions">
+              <button id="set-backup" class="btn-secondary">备份全部…</button>
+              <button id="set-restore" class="btn-secondary">从备份恢复…</button>
+            </div>
+          </div>
+          <!-- P0-商用化：关于区（版本 / 日志目录 / 检查更新） -->
+          <div class="setting-row">
+            <span class="setting-label">关于</span>
+            <div class="setting-control setting-actions">
+              <span id="set-version" class="setting-value">随手记</span>
+              <button id="set-log-dir" class="btn-secondary">打开日志目录</button>
+              <button id="set-check-update" class="btn-secondary">检查更新</button>
+            </div>
           </div>
         </div>
       </div>
@@ -150,6 +174,10 @@ function filteredNotes(): NoteMeta[] {
 function renderList(): void {
   const listEl = $("#note-list");
   const countEl = $("#list-count");
+  if (navView.get() === "trash") {
+    renderTrashList(listEl, countEl);
+    return;
+  }
   const items = filteredNotes();
   countEl.textContent = String(items.length);
 
@@ -159,6 +187,44 @@ function renderList(): void {
   }
   const sel = selectedPath.get();
   listEl.innerHTML = items.map((n) => cardHtml(n, n.path === sel)).join("");
+}
+
+/** P0-数据安全：回收站列表（恢复 / 永久删除按钮，点击行不进入编辑器）。 */
+function renderTrashList(listEl: HTMLElement, countEl: HTMLElement): void {
+  const items = trash.get();
+  countEl.textContent = String(items.length);
+  if (items.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-illus">🗑</div>
+        <div class="empty-title">回收站是空的</div>
+        <div class="empty-hint">删除的笔记会先到这里，可随时恢复</div>
+      </div>`;
+    return;
+  }
+  listEl.innerHTML =
+    items.map(trashCardHtml).join("") +
+    `<li class="trash-footer"><button type="button" class="btn-mini danger" id="trash-empty">清空回收站</button></li>`;
+}
+
+function trashCardHtml(t: TrashEntry): string {
+  const title = t.title.trim() ? t.title : "（无标题）";
+  return `
+    <li class="note-card trash-card" data-trash-id="${escapeAttr(t.id)}" data-title="${escapeAttr(title)}" tabindex="0" role="group" aria-label="回收站条目 ${escapeAttr(title)}">
+      <div class="card-top">
+        <span class="card-title trash-title">${escapeHtml(title)}</span>
+        <span class="badge badge-${t.format}">${t.format.toUpperCase()}</span>
+      </div>
+      <div class="card-meta">
+        <span title="${escapeAttr(t.originalRel)}">${escapeHtml(t.originalRel)}</span>
+        <span>· 删除于 ${formatTime(t.deletedAt)}</span>
+        ${t.imageCount ? `<span>· ${t.imageCount} 图</span>` : ""}
+      </div>
+      <div class="trash-actions">
+        <button type="button" class="btn-mini restore-btn" data-trash-id="${escapeAttr(t.id)}">恢复</button>
+        <button type="button" class="btn-mini danger purge-btn" data-trash-id="${escapeAttr(t.id)}">永久删除</button>
+      </div>
+    </li>`;
 }
 
 function cardHtml(n: NoteMeta, selected: boolean): string {
@@ -194,6 +260,11 @@ function emptyHtml(noNotes: boolean): string {
 }
 
 function renderEditor(): void {
+  // P0-数据安全：回收站视图不加载编辑器（展示恢复/删除操作）
+  if (navView.get() === "trash") {
+    editor?.render(null);
+    return;
+  }
   const sel = selectedPath.get();
   const n = sel ? notes.get().find((x) => x.path === sel) : undefined;
   editor?.render(n ?? null);
@@ -206,7 +277,8 @@ export function applyViewMode(): void {
 }
 
 export function updateListTitle(): void {
-  $("#list-title").textContent = navView.get() === "pinned" ? "收藏" : "全部笔记";
+  const v = navView.get();
+  $("#list-title").textContent = v === "pinned" ? "收藏" : v === "trash" ? "回收站" : "全部笔记";
 }
 
 // ---------- 工具 ----------

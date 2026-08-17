@@ -1,3 +1,7 @@
+// 随手记 (suishouji) — Copyright (C) 2026 Tanya Wang
+// SPDX-License-Identifier: AGPL-3.0-only
+// 本软件按 GNU AGPL-3.0 发布；商业使用需另行授权（见 COMMERCIAL-LICENSE.md）。
+//
 // 随手记 · Rust 后端入口
 // M0: 骨架 — 最小可运行窗口
 // M1: 文件系统核心 — 注入 FsStore，注册白名单命令
@@ -35,6 +39,22 @@ pub fn run() {
         .build();
 
     tauri::Builder::default()
+        // P0-商用化：统一日志（终端 + 应用日志目录文件），供崩溃排查与遥测
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("suishouji.log".into()),
+                    }),
+                ])
+                .build(),
+        )
+        // P0-商用化：自动更新（检查/下载/安装），配置见 tauri.conf.json → plugins.updater
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // P0-商用化：更新安装完成后重启应用
+        .plugin(tauri_plugin_process::init())
         // M4-3：单实例：二次启动聚焦既有主窗口（官方要求第一个注册）
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let _ = commands::open_main_window(app.clone());
@@ -70,8 +90,31 @@ pub fn run() {
             commands::set_app_root,
             commands::set_autostart,
             commands::set_note_title,
+            commands::get_crash_report,
+            commands::trash_note,
+            commands::list_trash,
+            commands::restore_note,
+            commands::purge_note,
+            commands::empty_trash,
+            commands::backup_all,
+            commands::restore_backup,
+            commands::open_log_dir,
         ])
         .setup(|app| {
+            // P0-商用化：panic 崩溃捕获 —— 崩溃信息写入应用日志目录 crash.log + 走日志插件。
+            // 保留默认 hook（终端输出），叠加文件落盘，供用户/遥测收集。
+            let crash_dir = app
+                .path()
+                .app_log_dir()
+                .unwrap_or_else(|_| std::env::temp_dir());
+            let default_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                let msg = format!("panic: {info}");
+                log::error!("{msg}");
+                let _ = std::fs::create_dir_all(&crash_dir);
+                let _ = std::fs::write(crash_dir.join("crash.log"), msg);
+                default_hook(info);
+            }));
             // M6：读设置决定根目录（settings.json → 默认），FsStore 在 setup 内 manage（改根重启生效）
             let cfg_dir = app.path().app_config_dir().unwrap_or_default();
             let root = settings::read(&cfg_dir)
